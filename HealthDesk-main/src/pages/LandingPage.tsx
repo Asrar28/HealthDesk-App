@@ -1,6 +1,74 @@
 import { Link } from 'react-router-dom';
-import { HeartPulse, CalendarCheck, Users, Building2, BookOpen, Bell, ShieldCheck, ArrowRight, Stethoscope, MapPin, Phone } from 'lucide-react';
+import {
+  HeartPulse,
+  CalendarCheck,
+  Users,
+  Building2,
+  BookOpen,
+  Bell,
+  ShieldCheck,
+  ArrowRight,
+  Stethoscope,
+  MapPin,
+} from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+
+const sampleReminders = [
+  {
+    icon: Stethoscope,
+    title: 'Annual checkup',
+    person: 'Aisha',
+    time: '10:00 AM',
+    bgClass: 'bg-teal-50 text-teal-600',
+  },
+  {
+    icon: HeartPulse,
+    title: 'BP screening',
+    person: 'Ibrahim',
+    time: '2:30 PM',
+    bgClass: 'bg-amber-50 text-amber-600',
+  },
+  {
+    icon: CalendarCheck,
+    title: 'Vaccination',
+    person: 'Zara',
+    time: 'Tomorrow',
+    bgClass: 'bg-mint-100 text-mint-700',
+  },
+];
+
+const features = [
+  {
+    icon: CalendarCheck,
+    title: 'Preventive Planner',
+    desc: 'Create recurring checkup reminders with lead times. Track vaccinations, dental visits, eye exams, and more — with calendar and list views.',
+  },
+  {
+    icon: Users,
+    title: 'Family Management',
+    desc: 'Add family member profiles with names, relationships, and avatars. Each reminder links to the right person.',
+  },
+  {
+    icon: Building2,
+    title: 'Facility Finder',
+    desc: 'Search healthcare facilities in Bhatkal by category, services, or PIN code. Call or get directions directly from the map.',
+  },
+  {
+    icon: BookOpen,
+    title: 'Health Library',
+    desc: 'Browse reviewed health articles on diabetes, heart health, nutrition, vaccinations, and more. Bookmark for later.',
+  },
+  {
+    icon: Bell,
+    title: 'Notifications',
+    desc: 'Get in-app reminders for upcoming checkups, overdue items, and new articles. Never miss a health appointment again.',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Privacy First',
+    desc: "Your family's health data is private to you. Only you can see your reminders and family profiles.",
+  },
+];
 
 export function LandingPage() {
   const { user } = useAuth();
@@ -49,7 +117,7 @@ export function LandingPage() {
                 Built for Bhatkal, Karnataka
               </div>
               <h1 className="text-4xl font-bold leading-tight text-white sm:text-5xl lg:text-6xl">
-                Your family's health,
+                Your family&apos;s health,
                 <span className="block text-mint-300">better connected.</span>
               </h1>
               <p className="mt-6 max-w-lg text-lg text-navy-100">
@@ -61,7 +129,10 @@ export function LandingPage() {
                   Get started free
                   <ArrowRight className="h-5 w-5" />
                 </Link>
-                <Link to="/login" className="btn-outline border-white/20 bg-transparent text-white hover:bg-white/10 hover:border-white/30">
+                <Link
+                  to="/login"
+                  className="btn-outline border-white/20 bg-transparent text-white hover:border-white/30 hover:bg-white/10"
+                >
                   I already have an account
                 </Link>
               </div>
@@ -81,22 +152,20 @@ export function LandingPage() {
               <div className="rounded-2xl bg-white/5 p-6 backdrop-blur">
                 <div className="rounded-xl bg-white p-6 shadow-elevated">
                   <div className="mb-4 flex items-center justify-between">
-                    <h3 className="font-semibold text-navy-800">Today's Health Plan</h3>
+                    <h3 className="font-semibold text-navy-800">Today&apos;s Health Plan</h3>
                     <span className="badge bg-teal-50 text-teal-700">3 reminders</span>
                   </div>
                   <div className="space-y-3">
-                    {[
-                      { icon: Stethoscope, title: 'Annual checkup', person: 'Aisha', time: '10:00 AM', color: 'teal' },
-                      { icon: HeartPulse, title: 'BP screening', person: 'Ibrahim', time: '2:30 PM', color: 'amber' },
-                      { icon: CalendarCheck, title: 'Vaccination', person: 'Zara', time: 'Tomorrow', color: 'mint' },
-                    ].map((item, i) => (
+                    {sampleReminders.map((item, i) => (
                       <div key={i} className="flex items-center gap-3 rounded-lg border border-navy-100 p-3">
-                        <div className={`flex h-10 w-10 items-center justify-center rounded-lg bg-${item.color}-50 text-${item.color}-600`}>
+                        <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${item.bgClass}`}>
                           <item.icon className="h-5 w-5" />
                         </div>
                         <div className="flex-1">
                           <p className="text-sm font-medium text-navy-800">{item.title}</p>
-                          <p className="text-xs text-navy-400">{item.person} · {item.time}</p>
+                          <p className="text-xs text-navy-400">
+                            {item.person} · {item.time}
+                          </p>
                         </div>
                       </div>
                     ))}
@@ -111,19 +180,16 @@ export function LandingPage() {
       {/* Features */}
       <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
         <div className="mb-12 text-center">
-          <h2 className="text-3xl font-bold text-navy-800 sm:text-4xl">Everything your family needs to stay healthy</h2>
-          <p className="mt-4 text-lg text-navy-500">Organise, plan, and stay on top of your family's preventive health — together.</p>
+          <h2 className="text-3xl font-bold text-navy-800 sm:text-4xl">
+            Everything your family needs to stay healthy
+          </h2>
+          <p className="mt-4 text-lg text-navy-500">
+            Organise, plan, and stay on top of your family&apos;s preventive health — together.
+          </p>
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            { icon: CalendarCheck, title: 'Preventive Planner', desc: 'Create recurring checkup reminders with lead times. Track vaccinations, dental visits, eye exams, and more — with calendar and list views.' },
-            { icon: Users, title: 'Family Management', desc: 'Add family member profiles with names, relationships, and avatars. Each reminder links to the right person.' },
-            { icon: Building2, title: 'Facility Finder', desc: 'Search healthcare facilities in Bhatkal by category, services, or PIN code. Call or get directions directly from the map.' },
-            { icon: BookOpen, title: 'Health Library', desc: 'Browse reviewed health articles on diabetes, heart health, nutrition, vaccinations, and more. Bookmark for later.' },
-            { icon: Bell, title: 'Notifications', desc: 'Get in-app reminders for upcoming checkups, overdue items, and new articles. Never miss a health appointment again.' },
-            { icon: ShieldCheck, title: 'Privacy First', desc: 'Your family's health data is private to you. Only you can see your reminders and family profiles.' },
-          ].map((f, i) => (
+          {features.map((f, i) => (
             <div key={i} className="card transition-shadow hover:shadow-card-hover">
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-teal-50 text-teal-600">
                 <f.icon className="h-6 w-6" />
@@ -155,8 +221,8 @@ export function LandingPage() {
       {/* CTA */}
       <section className="bg-navy-800 py-16">
         <div className="mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
-          <h2 className="text-3xl font-bold text-white">Ready to take charge of your family's health?</h2>
-          <p className="mt-4 text-lg text-navy-200">Join HealthDesk today. It's free to get started.</p>
+          <h2 className="text-3xl font-bold text-white">Ready to take charge of your family&apos;s health?</h2>
+          <p className="mt-4 text-lg text-navy-200">Join HealthDesk today. It&apos;s free to get started.</p>
           <Link to="/register" className="btn-primary mt-8 bg-teal-500 px-8 py-3 text-base hover:bg-teal-400">
             Create your account
             <ArrowRight className="h-5 w-5" />
