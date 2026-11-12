@@ -24,7 +24,7 @@ const roleLabels: Record<UserRole, string> = {
 };
 
 export function ProfilePage() {
-  const { user, signOut } = useAuth();
+  const { user, profile, refreshProfile, signOut } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [saved, setSaved] = useState(false);
@@ -52,12 +52,23 @@ export function ProfilePage() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      const { error } = await supabase
-        .from('profiles')
-        .upsert({ id: user!.id, full_name: data.display_name, email: user!.email }, { onConflict: 'id' });
-      if (error) throw error;
-    },
+  const cleanName = data.display_name.trim();
+
+  // 1. Save to profiles table
+  const { error } = await supabase.from('profiles').upsert({
+    id: user!.id,
+    email: user!.email,
+    full_name: cleanName,
+  }, { onConflict: 'id' });
+  if (error) throw error;
+
+  // 2. Save to auth metadata - Dashboard reads this
+  await supabase.auth.updateUser({
+    data: { full_name: cleanName, display_name: cleanName }
+  });
+},
     onSuccess: async (_, data) => {
+      await refreshProfile();
       setSaved(true);
       setProfileName(data.display_name);
       queryClient.invalidateQueries({ queryKey: ['profile'] });
