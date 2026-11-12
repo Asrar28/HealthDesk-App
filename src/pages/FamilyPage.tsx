@@ -115,6 +115,23 @@ export function FamilyPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['family-members', user?.id] });
+      // Notify staff - new family member added
+if (!editingMember) {
+  fetch("https://onesignal.com/api/v1/notifications", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Basic " + import.meta.env.VITE_ONESIGNAL_REST_KEY
+    },
+    body: JSON.stringify({
+      app_id: "f189b7f4-ca91-407e-9b3e-346e0fcc6926",
+      included_segments: ["Subscribed Users"],
+      headings: { en: "New Patient Added" },
+      contents: { en: `New family member added: ${formName || 'New Patient'}` },
+      url: "https://healthdesk-seven.vercel.app"
+    })
+  }).catch(() => {});
+}
       setShowModal(false);
       showToast({
         title: editingMember ? 'Family member updated' : 'Family member added',
