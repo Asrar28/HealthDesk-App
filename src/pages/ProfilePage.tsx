@@ -24,24 +24,31 @@ const roleLabels: Record<UserRole, string> = {
 };
 
 export function ProfilePage() {
-  const { user, profile, signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [saved, setSaved] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [profileRole, setProfileRole] = useState<UserRole>('member');
 
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { display_name: '' },
   });
 
-  // THIS WAS THE BUG: form loaded once when profile was still empty, never updated
+  // Fetch profile DIRECTLY from Supabase - don't rely on useAuth
   useEffect(() => {
-    if (profile?.full_name) {
-      reset({ display_name: profile.full_name });
-    }
-  }, [profile, reset]);
+    if (!user?.id) return;
+    supabase.from('profiles').select('full_name, role').eq('id', user.id).single().then(({ data }) => {
+      if (data) {
+        setProfileName(data.full_name || '');
+        setProfileRole((data.role as UserRole) || 'member');
+        reset({ display_name: data.full_name || '' });
+      }
+    });
+  }, [user?.id, reset]);
 
-  const displayName = profile?.full_name || 'User';
+  const displayName = profileName || 'User';
 
   const updateMutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -50,10 +57,10 @@ export function ProfilePage() {
         .upsert({ id: user!.id, full_name: data.display_name, email: user!.email }, { onConflict: 'id' });
       if (error) throw error;
     },
-    onSuccess: async () => {
+    onSuccess: async (_, data) => {
       setSaved(true);
+      setProfileName(data.display_name);
       queryClient.invalidateQueries({ queryKey: ['profile'] });
-      window.location.reload();
     },
   });
 
@@ -74,7 +81,7 @@ export function ProfilePage() {
           <div className="mt-1.5 flex items-center gap-2">
             <Badge>
               <Shield className="h-3 w-3" />
-              {roleLabels[(profile?.role as UserRole) ?? 'member']}
+              {roleLabels[profileRole]}
             </Badge>
           </div>
         </div>
