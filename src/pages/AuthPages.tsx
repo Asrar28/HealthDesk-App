@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { HeartPulse, Mail, Lock, ArrowRight, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { HeartPulse, Mail, Lock, ArrowRight, AlertCircle, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -14,7 +14,7 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-function PasswordInput({ id, placeholder, registration }: { id: string; placeholder: string; registration: ReturnType<ReturnType<typeof useForm>['register']> }) {
+export function PasswordInput({ id, placeholder, registration }: { id: string; placeholder: string; registration: ReturnType<ReturnType<typeof useForm>['register']> }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
@@ -43,6 +43,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [serverError, setServerError] = useState('');
+  const successMessage = (location.state as { message?: string })?.message || new URLSearchParams(location.search).get('message');
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -68,6 +69,13 @@ export function LoginPage() {
   return (
     <AuthShell title="Welcome back" subtitle="Sign in to manage your family's health">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        {successMessage && (
+          <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800 border border-emerald-200">
+            <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-emerald-600" />
+            {successMessage}
+          </div>
+        )}
+
         {serverError && (
           <div className="flex items-center gap-2 rounded-lg bg-coral-50 px-4 py-3 text-sm text-coral-700">
             <AlertCircle className="h-4 w-4 flex-shrink-0" />
@@ -238,8 +246,9 @@ export function ForgotPasswordPage() {
 
   const onSubmit = async (data: FormData) => {
     setServerError('');
-    const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
-      redirectTo: `${window.location.origin}/login`,
+    const email = data.email.trim().toLowerCase();
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: 'https://healthdesk-seven.vercel.app/reset-password',
     });
     if (error) {
       setServerError('Could not send reset email. Please try again later.');
@@ -297,7 +306,7 @@ export function ForgotPasswordPage() {
   );
 }
 
-function AuthShell({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+export function AuthShell({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-cream-100 lg:flex-row">
       <div className="relative hidden bg-navy-800 lg:block lg:w-1/2">

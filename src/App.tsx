@@ -3,6 +3,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { LandingPage } from '@/pages/LandingPage';
 import { LoginPage, RegisterPage, ForgotPasswordPage } from '@/pages/AuthPages';
+import { ResetPassword } from '@/pages/ResetPassword';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { PlannerPage } from '@/pages/PlannerPage';
 import { FamilyPage } from '@/pages/FamilyPage';
@@ -24,6 +25,7 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
 
       <Route
         path="/dashboard"
