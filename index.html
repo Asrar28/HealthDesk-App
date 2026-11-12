@@ -13,6 +13,17 @@
     <meta property="og:image" content="https://bolt.new/static/og_default.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://bolt.new/static/og_default.png" />
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<script>
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function(OneSignal) {
+    await OneSignal.init({
+      appId: "f189b7f4-ca91-407e-9b3e-346e0fcc6926",
+      notifyButton: { enable: true },
+      allowLocalhostAsSecureOrigin: true,
+    });
+  });
+</script>
   </head>
   <body>
     <div id="root"></div>
