@@ -24,7 +24,7 @@ const roleLabels: Record<UserRole, string> = {
 };
 
 export function ProfilePage() {
-  const { user, profile, signOut, refreshProfile } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [saved, setSaved] = useState(false);
@@ -52,8 +52,8 @@ export function ProfilePage() {
     },
     onSuccess: async () => {
       setSaved(true);
-      await refreshProfile();
       queryClient.invalidateQueries({ queryKey: ['profile'] });
+      window.location.reload();
     },
   });
 
