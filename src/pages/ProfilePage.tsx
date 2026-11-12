@@ -1,43 +1,46 @@
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { User as UserIcon, Mail, LogOut, Shield } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { Badge } from '@/components/ui/Badge';
-import { Spinner } from '@/components/ui/Spinner';
-import { Mail, Shield, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Spinner, Badge } from '@/components/ui';
+import type { UserRole } from '@/lib/types';
 
-type FormData = { display_name: string };
-type UserRole = 'member' | 'admin' | 'doctor';
+const schema = z.object({
+  display_name: z.string().min(2, 'Enter a name (at least 2 characters)'),
+});
+
+type FormData = z.infer<typeof schema>;
 
 const roleLabels: Record<UserRole, string> = {
   member: 'Member',
+  editor: 'Editor',
+  reviewer: 'Reviewer',
   admin: 'Admin',
-  doctor: 'Doctor',
 };
 
 export function ProfilePage() {
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut, refreshProfile } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [saved, setSaved] = useState(false);
-  const [localProfile, setLocalProfile] = useState<{ full_name: string | null; role: string | null } | null>(null);
 
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
+    resolver: zodResolver(schema),
     defaultValues: { display_name: '' },
   });
 
-  // Fetch profile DIRECTLY, don't wait for useAuth
+  // THIS WAS THE BUG: form loaded once when profile was still empty, never updated
   useEffect(() => {
-    if (!user) return;
-    supabase.from('profiles').select('full_name, role').eq('id', user.id).maybeSingle().then(({ data }) => {
-      if (data) {
-        setLocalProfile(data);
-        reset({ display_name: data.full_name ?? '' });
-      }
-    });
-  }, [user, reset]);
+    if (profile?.full_name) {
+      reset({ display_name: profile.full_name });
+    }
+  }, [profile, reset]);
 
-  const profile = localProfile;
   const displayName = profile?.full_name || 'User';
 
   const updateMutation = useMutation({
@@ -49,30 +52,29 @@ export function ProfilePage() {
     },
     onSuccess: async () => {
       setSaved(true);
-      const { data } = await supabase.from('profiles').select('full_name, role').eq('id', user!.id).maybeSingle();
-      if (data) {
-        setLocalProfile(data);
-        reset({ display_name: data.full_name ?? '' });
-      }
+      await refreshProfile();
       queryClient.invalidateQueries({ queryKey: ['profile'] });
     },
   });
 
-  const handleSignOut = async () => { await signOut(); };
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/login');
+  };
 
   return (
     <div className="space-y-6">
       <div className="card flex items-center gap-4">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-teal-500 text-white">
-          <span className="text-2xl font-bold">{displayName.charAt(0).toUpperCase()}</span>
+          <UserIcon className="h-8 w-8" />
         </div>
         <div>
           <h2 className="text-lg font-semibold text-navy-800">{displayName}</h2>
           <p className="text-sm text-navy-500">{user?.email}</p>
           <div className="mt-1.5 flex items-center gap-2">
-            <Badge variant="teal">
+            <Badge>
               <Shield className="h-3 w-3" />
-              {roleLabels[(profile?.role as UserRole) ?? 'member'] || 'Member'}
+              {roleLabels[(profile?.role as UserRole) ?? 'member']}
             </Badge>
           </div>
         </div>
@@ -103,7 +105,7 @@ export function ProfilePage() {
 
         <div className="flex justify-end">
           <button type="submit" disabled={isSubmitting} className="btn-primary">
-            {isSubmitting && <Spinner className="h-4 w-4" />}
+            {isSubmitting && <Spinner />}
             Save changes
           </button>
         </div>
