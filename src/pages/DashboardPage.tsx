@@ -24,9 +24,8 @@ import type { FamilyMember, Reminder, Medicine, Appointment } from '@/lib/types'
 export function DashboardPage() {
   const { user, profile } = useAuth();
   const queryClient = useQueryClient();
-
-  const displayName = profile?.display_name || user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'User';
-
+const displayName = profile?.full_name || (profile as any)?.display_name || user?.user_metadata?.full_name || user?.user_metadata?.display_name || 'User';
+ 
   // 1. Fetch Family Members
   const { data: familyMembers = [] } = useQuery<FamilyMember[]>({
     queryKey: ['family-members', user?.id],
