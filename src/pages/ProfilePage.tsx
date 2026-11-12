@@ -31,12 +31,12 @@ export function ProfilePage() {
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { display_name: profile?.display_name ?? '' },
+    defaultValues: { display_name: profile?.full_name ?? '' },
   });
 
   const updateMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      const { error } = await supabase.from('profiles').upsert({ id: user!.id, display_name: data.display_name, email: user!.email }, { onConflict: 'id' });
+      const { error } = await supabase.from('profiles').upsert({ id: user!.id, full_name: data.display_name, email: user!.email }, { onConflict: 'id' });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -62,10 +62,10 @@ export function ProfilePage() {
       <div className="card">
         <div className="flex items-center gap-4">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-teal-500 text-white">
-            <span className="text-2xl font-bold">{profile?.display_name?.charAt(0).toUpperCase() ?? user?.email?.charAt(0).toUpperCase()}</span>
+            <span className="text-2xl font-bold">{profile?.full_name?.charAt(0).toUpperCase() ?? user?.email?.charAt(0).toUpperCase()}</span>
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-navy-800">{profile?.display_name || 'User'}</h2>
+            <h2 className="text-lg font-semibold text-navy-800">{profile?.full_name || 'User'}</h2>
             <p className="text-sm text-navy-500">{user?.email}</p>
             <div className="mt-1.5 flex items-center gap-2">
               <Badge variant="teal">
