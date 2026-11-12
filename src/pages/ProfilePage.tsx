@@ -36,7 +36,7 @@ export function ProfilePage() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      const { error } = await supabase.from('profiles').update({ display_name: data.display_name }).eq('id', user!.id);
+      const { error } = await supabase.from('profiles').upsert({ id: user!.id, display_name: data.display_name, email: user!.email }, { onConflict: 'id' });
       if (error) throw error;
     },
     onSuccess: () => {
