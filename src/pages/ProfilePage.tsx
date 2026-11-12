@@ -34,11 +34,27 @@ export function ProfilePage() {
     defaultValues: { display_name: profile?.full_name ?? '' },
   });
 
-  const updateMutation = useMutation({
-    mutationFn: async (data: FormData) => {
-      const { error } = await supabase.from('profiles').upsert({ id: user!.id, full_name: data.display_name, email: user!.email }, { onConflict: 'id' });
+ const updateMutation = useMutation({
+  mutationFn: async (data: FormData) => {
+    const { data: existing } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', user!.id)
+      .maybeSingle();
+
+    if (existing) {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ full_name: data.display_name, email: user!.email })
+        .eq('id', user!.id);
       if (error) throw error;
-    },
+    } else {
+      const { error } = await supabase
+        .from('profiles')
+        .insert({ id: user!.id, full_name: data.display_name, email: user!.email });
+      if (error) throw error;
+    }
+  },
     onSuccess: () => {
       refreshProfile();
       queryClient.invalidateQueries({ queryKey: ['profile'] });
