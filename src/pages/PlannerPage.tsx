@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarDays,
@@ -80,6 +80,31 @@ export function PlannerPage() {
     },
     enabled: !!user?.id,
   });
+    // NOTIFICATION CHECKER - paste on line 83
+const notifiedRef = useRef<Set<string>>(new Set())
+
+useEffect(() => {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission()
+  }
+  const timer = setInterval(() => {
+    if (!reminders) return
+    const now = new Date()
+    const todayStr = now.toISOString().slice(0, 10)
+    const timeStr = now.toTimeString().slice(0, 5)
+    reminders.forEach((r: any) => {
+      const rDate = (r.due_date || r.date || '').slice(0, 10)
+      const rTime = (r.due_time || r.time || r.reminder_time || '').slice(0, 5)
+      if (rDate === todayStr && rTime === timeStr && !notifiedRef.current.has(r.id)) {
+        notifiedRef.current.add(r.id)
+        if (Notification.permission === 'granted') {
+          new Notification('HealthDesk Reminder', { body: `${r.title} - Time!` })
+        }
+      }
+    })
+  }, 15000)
+  return () => clearInterval(timer)
+}, [reminders])
 
   // 2. Fetch Family Members for dropdown
   const { data: familyMembers = [] } = useQuery<FamilyMember[]>({
