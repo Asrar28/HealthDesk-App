@@ -14,13 +14,28 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://bolt.new/static/og_default.png" />
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <script>
   window.OneSignalDeferred = window.OneSignalDeferred || [];
   OneSignalDeferred.push(async function(OneSignal) {
     await OneSignal.init({
       appId: "f189b7f4-ca91-407e-9b3e-346e0fcc6926",
-      notifyButton: { enable: true },
-      allowLocalhostAsSecureOrigin: true,
+      promptOptions: {
+        slidedown: {
+          prompts: [
+            {
+              type: "push",
+              autoPrompt: true,
+              text: {
+                actionMessage: "Get medicine reminders from HealthDesk?",
+                acceptButton: "Allow",
+                cancelButton: "No Thanks"
+              },
+              delay: { pageViews: 1, timeDelay: 3 }
+            }
+          ]
+        }
+      }
     });
   });
 </script>
