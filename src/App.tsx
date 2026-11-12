@@ -1,20 +1,20 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppLayout } from '@/components/AppLayout';
-import { ProtectedRoute, RoleRoute } from '@/components/ProtectedRoute';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { LandingPage } from '@/pages/LandingPage';
 import { LoginPage, RegisterPage, ForgotPasswordPage } from '@/pages/AuthPages';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { PlannerPage } from '@/pages/PlannerPage';
 import { FamilyPage } from '@/pages/FamilyPage';
+import { MedicinesPage } from '@/pages/MedicinesPage';
+import { AppointmentsPage } from '@/pages/AppointmentsPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { FacilitiesPage } from '@/pages/FacilitiesPage';
 import { FacilityDetailPage } from '@/pages/FacilityDetailPage';
-import { FacilityAdminPage } from '@/pages/FacilityAdminPage';
 import { LibraryPage } from '@/pages/LibraryPage';
 import { ArticleDetailPage } from '@/pages/ArticleDetailPage';
 import { BookmarksPage } from '@/pages/BookmarksPage';
-import { EditorDashboardPage } from '@/pages/EditorDashboardPage';
 import { NotificationsPage } from '@/pages/NotificationsPage';
 
 export default function App() {
@@ -51,6 +51,26 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout>
               <FamilyPage />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/medicines"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <MedicinesPage />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/appointments"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <AppointmentsPage />
             </AppLayout>
           </ProtectedRoute>
         }
@@ -96,18 +116,6 @@ export default function App() {
         }
       />
       <Route
-        path="/facilities/admin"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <RoleRoute roles={['admin']}>
-                <FacilityAdminPage />
-              </RoleRoute>
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
         path="/library"
         element={
           <ProtectedRoute>
@@ -133,18 +141,6 @@ export default function App() {
           <ProtectedRoute>
             <AppLayout>
               <ArticleDetailPage />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/library/editor"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <RoleRoute roles={['editor', 'reviewer', 'admin']}>
-                <EditorDashboardPage />
-              </RoleRoute>
             </AppLayout>
           </ProtectedRoute>
         }

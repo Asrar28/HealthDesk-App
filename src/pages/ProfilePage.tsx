@@ -70,7 +70,7 @@ export function ProfilePage() {
             <div className="mt-1.5 flex items-center gap-2">
               <Badge variant="teal">
                 <Shield className="h-3 w-3" />
-                {roleLabels[profile?.role ?? 'member']}
+                {roleLabels[(profile?.role as UserRole) ?? 'member'] || 'Member'}
               </Badge>
             </div>
           </div>

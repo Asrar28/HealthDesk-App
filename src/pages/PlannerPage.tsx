@@ -1,682 +1,753 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm, Controller } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import {
-  startOfDay, endOfDay, startOfWeek, endOfWeek, isBefore, isAfter, parseISO,
-  format, addDays, eachDayOfInterval, isSameDay, isSameMonth,
-} from 'date-fns';
-import {
-  Plus, Calendar as CalendarIcon, List, Pencil, Trash2, Check, Clock, Bell,
-  AlertTriangle, ChevronLeft, ChevronRight, Search, X, Filter,
+  CalendarDays,
+  Plus,
+  Search,
+  Pencil,
+  Trash2,
+  CheckCircle2,
+  Clock,
+  Filter,
+  User,
+  AlertCircle,
+  RotateCw,
+  Bell,
+  Calendar,
 } from 'lucide-react';
+import { format, parseISO, isToday, isFuture, addDays } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import {
-  LoadingState, EmptyState, ErrorState, Badge, Modal, ConfirmDialog, Spinner,
-} from '@/components/ui';
-import { calculateNextOccurrence, formatLeadTime, formatRecurrence } from '@/lib/date-utils';
-import type { Reminder, FamilyMember, ReminderCategory, LeadTime, RecurrenceType } from '@/lib/types';
+import { Modal, ConfirmDialog, Badge, Spinner, EmptyState, showToast } from '@/components/ui';
+import type { Reminder, FamilyMember } from '@/lib/types';
 
-const CATEGORIES: ReminderCategory[] = [
-  'General health checkup', 'Vaccination', 'Blood pressure screening',
-  'Blood glucose screening', 'Dental', 'Eye', 'Follow-up', 'Wellness', 'Nutrition', 'Custom',
+const CATEGORIES = [
+  'General health checkup',
+  'Vaccination',
+  'Blood pressure screening',
+  'Blood glucose screening',
+  'Dental',
+  'Eye',
+  'Follow-up',
+  'Wellness',
+  'Nutrition',
+  'Custom',
 ];
 
-const LEAD_TIMES: LeadTime[] = ['at_time', '15_min', '1_hour', '1_day', '1_week'];
-const RECURRENCES: RecurrenceType[] = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
-
-const schema = z.object({
-  title: z.string().min(2, 'Enter a title (at least 2 characters)'),
-  family_member_id: z.string().optional(),
-  category: z.enum([
-    'General health checkup', 'Vaccination', 'Blood pressure screening',
-    'Blood glucose screening', 'Dental', 'Eye', 'Follow-up', 'Wellness', 'Nutrition', 'Custom',
-  ]),
-  due_date: z.string().min(1, 'Pick a date'),
-  due_time: z.string().min(1, 'Pick a time'),
-  lead_time: z.enum(['at_time', '15_min', '1_hour', '1_day', '1_week']),
-  recurrence: z.enum(['none', 'daily', 'weekly', 'monthly', 'yearly']),
-  notes: z.string().optional(),
-});
-
-type FormData = z.infer<typeof schema>;
+const PRIORITIES = ['Low', 'Medium', 'High'];
+const RECURRENCES = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 
 export function PlannerPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [view, setView] = useState<'list' | 'calendar'>('list');
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [snoozeId, setSnoozeId] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [filterCategory, setFilterCategory] = useState<string>('all');
-  const [filterPerson, setFilterPerson] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [calendarMonth, setCalendarMonth] = useState(new Date());
-  const [selectedCalendarDay, setSelectedCalendarDay] = useState<Date | null>(null);
 
-  const { data: reminders = [], isLoading, error, refetch } = useQuery<(Reminder & { family_members?: FamilyMember })[]>({
-    queryKey: ['reminders'],
+  // Filters
+  const [filterTab, setFilterTab] = useState<'all' | 'today' | 'upcoming' | 'completed'>('all');
+  const [filterMember, setFilterMember] = useState<string>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [search, setSearch] = useState('');
+
+  // Modals
+  const [showModal, setShowModal] = useState(false);
+  const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [snoozeId, setSnoozeId] = useState<string | null>(null);
+
+  // Form State
+  const [formTitle, setFormTitle] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formCategory, setFormCategory] = useState('General health checkup');
+  const [formMemberId, setFormMemberId] = useState('');
+  const [formDate, setFormDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [formTime, setFormTime] = useState('09:00');
+  const [formPriority, setFormPriority] = useState('Medium');
+  const [formRecurrence, setFormRecurrence] = useState('none');
+  const [formNotes, setFormNotes] = useState('');
+  const [formError, setFormError] = useState('');
+
+  // 1. Fetch Reminders
+  const { data: reminders = [], isLoading, error, refetch } = useQuery<Reminder[]>({
+    queryKey: ['reminders', user?.id],
     queryFn: async () => {
+      if (!user?.id) return [];
       const { data, error } = await supabase
         .from('reminders')
-        .select('*, family_members(*)')
+        .select('*')
+        .eq('user_id', user.id)
         .order('due_date', { ascending: true });
       if (error) throw error;
-      return data as (Reminder & { family_members?: FamilyMember })[];
+      return (data || []) as Reminder[];
     },
-    enabled: !!user,
+    enabled: !!user?.id,
   });
 
+  // 2. Fetch Family Members for dropdown
   const { data: familyMembers = [] } = useQuery<FamilyMember[]>({
-    queryKey: ['family-members'],
+    queryKey: ['family-members', user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('family_members').select('*').order('display_name');
+      if (!user?.id) return [];
+      const { data, error } = await supabase
+        .from('family_members')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('display_name', { ascending: true });
       if (error) throw error;
-      return data as FamilyMember[];
+      return (data || []) as FamilyMember[];
     },
-    enabled: !!user,
+    enabled: !!user?.id,
   });
 
-  const createMutation = useMutation({
-    mutationFn: async (data: FormData) => {
-      const dueDate = new Date(`${data.due_date}T${data.due_time}`);
-      const { error } = await supabase.from('reminders').insert({
-        title: data.title,
-        family_member_id: data.family_member_id || null,
-        category: data.category,
-        due_date: dueDate.toISOString(),
-        lead_time: data.lead_time,
-        recurrence: data.recurrence,
-        notes: data.notes || null,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['reminders'] });
-      setShowForm(false);
-    },
-  });
+  const memberMap = useMemo(() => {
+    const map = new Map<string, string>();
+    familyMembers.forEach((m) => map.set(m.id, m.display_name || m.name));
+    return map;
+  }, [familyMembers]);
 
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: FormData }) => {
-      const dueDate = new Date(`${data.due_date}T${data.due_time}`);
-      const { error } = await supabase.from('reminders').update({
-        title: data.title,
-        family_member_id: data.family_member_id || null,
-        category: data.category,
-        due_date: dueDate.toISOString(),
-        lead_time: data.lead_time,
-        recurrence: data.recurrence,
-        notes: data.notes || null,
-        updated_at: new Date().toISOString(),
-      }).eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['reminders'] });
-      setShowForm(false);
-      setEditingId(null);
-    },
-  });
+  // Open Add modal
+  const handleOpenAdd = () => {
+    setEditingReminder(null);
+    setFormTitle('');
+    setFormDescription('');
+    setFormCategory('General health checkup');
+    setFormMemberId('');
+    setFormDate(format(new Date(), 'yyyy-MM-dd'));
+    setFormTime('09:00');
+    setFormPriority('Medium');
+    setFormRecurrence('none');
+    setFormNotes('');
+    setFormError('');
+    setShowModal(true);
+  };
 
-  const completeMutation = useMutation({
-    mutationFn: async (reminder: Reminder) => {
-      const completedDate = new Date();
-      const baseDate = parseISO(reminder.due_date);
-      const nextDate = calculateNextOccurrence(baseDate, reminder.recurrence);
+  // Open Edit modal
+  const handleOpenEdit = (r: Reminder) => {
+    setEditingReminder(r);
+    setFormTitle(r.title || '');
+    setFormDescription(r.description || '');
+    setFormCategory(r.category || 'General health checkup');
+    setFormMemberId(r.family_member_id || '');
+    setFormDate(r.date || r.due_date?.slice(0, 10) || format(new Date(), 'yyyy-MM-dd'));
+    setFormTime(r.time || r.due_time || '09:00');
+    setFormPriority(r.priority || 'Medium');
+    setFormRecurrence(r.recurrence || 'none');
+    setFormNotes(r.notes || '');
+    setFormError('');
+    setShowModal(true);
+  };
 
-      if (nextDate && reminder.recurrence !== 'none') {
-        const { error: updateError } = await supabase.from('reminders').update({
-          status: 'completed',
-          completed_at: completedDate.toISOString(),
-          next_due_date: nextDate.toISOString(),
-          updated_at: completedDate.toISOString(),
-        }).eq('id', reminder.id);
-        if (updateError) throw updateError;
+  // Save Mutation
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!user?.id) throw new Error('Not authenticated');
+      if (!formTitle.trim()) throw new Error('Please enter a title');
+      if (!formDate) throw new Error('Please select a date');
 
-        const { error: insertError } = await supabase.from('reminders').insert({
-          owner_id: user!.id,
-          family_member_id: reminder.family_member_id,
-          title: reminder.title,
-          category: reminder.category,
-          due_date: nextDate.toISOString(),
-          lead_time: reminder.lead_time,
-          recurrence: reminder.recurrence,
-          notes: reminder.notes,
-        });
-        if (insertError) throw insertError;
+      // STRICT Supabase column match:
+      // id, user_id, title, description, due_date, due_time, date, category, type, status, priority, recurrence, family_member_id, notes, is_completed, created_at
+      // CRITICAL: save BOTH due_date + date = same value, due_time + time = same value
+      const payload = {
+        user_id: user.id,
+        title: formTitle.trim(),
+        description: formDescription.trim() || null,
+        due_date: formDate,
+        date: formDate,
+        due_time: formTime || null,
+        time: formTime || null,
+        category: formCategory,
+        type: formCategory,
+        status: editingReminder ? editingReminder.status : 'pending',
+        priority: formPriority,
+        recurrence: formRecurrence,
+        family_member_id: formMemberId ? formMemberId : null,
+        notes: formNotes.trim() || null,
+        is_completed: editingReminder ? editingReminder.is_completed : false,
+      };
+
+      if (editingReminder) {
+        const { error } = await supabase
+          .from('reminders')
+          .update(payload)
+          .eq('id', editingReminder.id)
+          .eq('user_id', user.id);
+        if (error) throw error;
       } else {
-        const { error } = await supabase.from('reminders').update({
-          status: 'completed',
-          completed_at: completedDate.toISOString(),
-          updated_at: completedDate.toISOString(),
-        }).eq('id', reminder.id);
+        const { error } = await supabase.from('reminders').insert(payload);
         if (error) throw error;
       }
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reminders'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reminders', user?.id] });
+      setShowModal(false);
+      showToast({
+        title: editingReminder ? 'Reminder updated' : 'Reminder created',
+        type: 'success',
+      });
+    },
+    onError: (err: any) => {
+      setFormError(err.message || 'Failed to save reminder');
+      showToast({
+        title: 'Error saving reminder',
+        description: err.message,
+        type: 'error',
+      });
+    },
   });
 
+  // Toggle Completion
+  const toggleCompleteMutation = useMutation({
+    mutationFn: async ({ id, is_completed }: { id: string; is_completed: boolean }) => {
+      if (!user?.id) throw new Error('Not authenticated');
+      const { error } = await supabase
+        .from('reminders')
+        .update({
+          is_completed,
+          status: is_completed ? 'completed' : 'pending',
+        })
+        .eq('id', id)
+        .eq('user_id', user.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reminders', user?.id] });
+      showToast({ title: 'Status updated', type: 'success' });
+    },
+    onError: (err: any) => {
+      showToast({ title: 'Failed to update', description: err.message, type: 'error' });
+    },
+  });
+
+  // Snooze by N days
   const snoozeMutation = useMutation({
     mutationFn: async ({ id, days }: { id: string; days: number }) => {
-      const snoozedUntil = addDays(new Date(), days);
-      const { error } = await supabase.from('reminders').update({
-        status: 'snoozed',
-        snoozed_until: snoozedUntil.toISOString(),
-        updated_at: new Date().toISOString(),
-      }).eq('id', id);
+      if (!user?.id) throw new Error('Not authenticated');
+      const current = reminders.find((r) => r.id === id);
+      const base = current?.date || current?.due_date || format(new Date(), 'yyyy-MM-dd');
+      const nextDate = format(addDays(new Date(base), days), 'yyyy-MM-dd');
+
+      const { error } = await supabase
+        .from('reminders')
+        .update({
+          date: nextDate,
+          due_date: nextDate,
+          status: 'pending',
+        })
+        .eq('id', id)
+        .eq('user_id', user.id);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['reminders'] });
+      queryClient.invalidateQueries({ queryKey: ['reminders', user?.id] });
       setSnoozeId(null);
+      showToast({ title: 'Reminder snoozed', type: 'info' });
+    },
+    onError: (err: any) => {
+      showToast({ title: 'Snooze failed', description: err.message, type: 'error' });
     },
   });
 
+  // Delete Mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('reminders').delete().eq('id', id);
+      if (!user?.id) throw new Error('Not authenticated');
+      const { error } = await supabase
+        .from('reminders')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['reminders'] });
-      setDeleteId(null);
+      queryClient.invalidateQueries({ queryKey: ['reminders', user?.id] });
+      setDeletingId(null);
+      showToast({ title: 'Reminder deleted', type: 'info' });
+    },
+    onError: (err: any) => {
+      showToast({ title: 'Delete failed', description: err.message, type: 'error' });
     },
   });
 
-  const filtered = useMemo(() => {
-    const now = new Date();
-    const todayStart = startOfDay(now);
-    const todayEnd = endOfDay(now);
-    const weekStart = startOfWeek(now, { weekStartsOn: 1 });
-    const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+  // Filtering Logic
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
 
+  const filteredReminders = useMemo(() => {
     return reminders.filter((r) => {
-      if (search && !r.title.toLowerCase().includes(search.toLowerCase())) return false;
-      if (filterCategory !== 'all' && r.category !== filterCategory) return false;
-      if (filterPerson !== 'all' && r.family_member_id !== filterPerson) return false;
-
-      if (filterStatus !== 'all') {
-        const effectiveDate = r.snoozed_until ? parseISO(r.snoozed_until) : parseISO(r.due_date);
-        if (filterStatus === 'pending' && r.status !== 'pending') return false;
-        if (filterStatus === 'completed' && r.status !== 'completed') return false;
-        if (filterStatus === 'snoozed' && r.status !== 'snoozed') return false;
-        if (filterStatus === 'overdue' && !(r.status === 'pending' && isBefore(effectiveDate, todayStart))) return false;
-        if (filterStatus === 'today' && !(r.status === 'pending' && isAfter(effectiveDate, todayStart) && isBefore(effectiveDate, todayEnd))) return false;
-        if (filterStatus === 'week' && !(r.status === 'pending' && isAfter(effectiveDate, todayEnd) && isBefore(effectiveDate, weekEnd))) return false;
+      // 1. Tab filter
+      if (filterTab === 'today') {
+        const d = r.date || r.due_date || '';
+        if (!d.startsWith(todayStr)) return false;
+      } else if (filterTab === 'upcoming') {
+        const d = r.date || r.due_date || '';
+        if (d < todayStr || r.is_completed) return false;
+      } else if (filterTab === 'completed') {
+        if (!r.is_completed) return false;
       }
+
+      // 2. Member filter
+      if (filterMember !== 'all') {
+        if (r.family_member_id !== filterMember) return false;
+      }
+
+      // 3. Category filter
+      if (filterCategory !== 'all') {
+        if (r.category !== filterCategory) return false;
+      }
+
+      // 4. Search filter
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        const t = (r.title || '').toLowerCase();
+        const d = (r.description || '').toLowerCase();
+        const n = (r.notes || '').toLowerCase();
+        if (!t.includes(q) && !d.includes(q) && !n.includes(q)) return false;
+      }
+
       return true;
     });
-  }, [reminders, search, filterCategory, filterPerson, filterStatus]);
-
-  const editingReminder = reminders.find((r) => r.id === editingId);
-
-  if (isLoading) return <LoadingState message="Loading your reminders..." />;
-  if (error) return <ErrorState message="Could not load your reminders." onRetry={() => refetch()} />;
+  }, [reminders, filterTab, filterMember, filterCategory, search, todayStr]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-navy-800">Preventive Planner</h1>
-          <p className="text-sm text-navy-500">Manage checkups, vaccinations, and health reminders</p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Preventive Planner</h1>
+          <p className="text-sm text-slate-500">
+            Never miss an annual blood test, dental checkup, child vaccination, or routine screening.
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-navy-200 bg-white p-1">
-            <button
-              onClick={() => setView('list')}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${view === 'list' ? 'bg-teal-50 text-teal-700' : 'text-navy-500'}`}
-            >
-              <List className="h-4 w-4" /> List
-            </button>
-            <button
-              onClick={() => setView('calendar')}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${view === 'calendar' ? 'bg-teal-50 text-teal-700' : 'text-navy-500'}`}
-            >
-              <CalendarIcon className="h-4 w-4" /> Calendar
-            </button>
-          </div>
-          <button
-            onClick={() => { setEditingId(null); setShowForm(true); }}
-            className="btn-primary"
-          >
-            <Plus className="h-4 w-4" /> New
-          </button>
-        </div>
+        <button onClick={handleOpenAdd} className="btn-primary self-start sm:self-auto">
+          <Plus className="h-4 w-4" /> New Reminder
+        </button>
       </div>
 
-      {/* Filters */}
-      <div className="card">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-navy-300" />
+      {/* Filter Tabs & Search Bar */}
+      <div className="space-y-3">
+        {/* Filter Pills */}
+        <div className="flex flex-wrap items-center gap-2">
+          {(['all', 'today', 'upcoming', 'completed'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setFilterTab(tab)}
+              className={`rounded-xl px-4 py-2 text-xs font-bold capitalize transition-all ${
+                filterTab === tab
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'bg-white text-slate-600 border border-gray-200/80 hover:bg-slate-50'
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {/* Secondary filters row */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="rounded-xl bg-white px-3 py-2 border border-gray-200/80 shadow-xs flex items-center gap-2">
+            <Search className="h-4 w-4 text-slate-400 shrink-0" />
             <input
-              className="input pl-10"
+              type="text"
               placeholder="Search reminders..."
+              className="w-full text-xs text-slate-800 outline-none bg-transparent placeholder:text-slate-400"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <select className="input" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
-            <option value="all">All categories</option>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <select className="input" value={filterPerson} onChange={(e) => setFilterPerson(e.target.value)}>
-            <option value="all">All family members</option>
-            {familyMembers.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
-          </select>
-          <select className="input" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-            <option value="all">All statuses</option>
-            <option value="pending">Pending</option>
-            <option value="today">Due today</option>
-            <option value="overdue">Overdue</option>
-            <option value="week">This week</option>
-            <option value="completed">Completed</option>
-            <option value="snoozed">Snoozed</option>
-          </select>
+
+          <div className="rounded-xl bg-white px-3 py-1.5 border border-gray-200/80 shadow-xs flex items-center gap-2">
+            <User className="h-4 w-4 text-slate-400 shrink-0" />
+            <select
+              className="w-full text-xs text-slate-800 outline-none bg-transparent"
+              value={filterMember}
+              onChange={(e) => setFilterMember(e.target.value)}
+            >
+              <option value="all">All Family Members</option>
+              {familyMembers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.display_name || m.name} ({m.relationship})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="rounded-xl bg-white px-3 py-1.5 border border-gray-200/80 shadow-xs flex items-center gap-2">
+            <Filter className="h-4 w-4 text-slate-400 shrink-0" />
+            <select
+              className="w-full text-xs text-slate-800 outline-none bg-transparent"
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+            >
+              <option value="all">All Categories</option>
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        {(search || filterCategory !== 'all' || filterPerson !== 'all' || filterStatus !== 'all') && (
-          <button
-            onClick={() => { setSearch(''); setFilterCategory('all'); setFilterPerson('all'); setFilterStatus('all'); }}
-            className="mt-3 flex items-center gap-1 text-sm text-teal-600 hover:text-teal-700"
-          >
-            <X className="h-3.5 w-3.5" /> Clear filters
-          </button>
-        )}
       </div>
 
-      {reminders.length === 0 && (
-        <div className="card">
-          <EmptyState
-            icon={<CalendarIcon className="h-12 w-12" />}
-            title="No reminders yet"
-            description="Create your first preventive health reminder to start tracking checkups, vaccinations, and screenings."
-            action={<button onClick={() => setShowForm(true)} className="btn-primary"><Plus className="h-4 w-4" /> Create reminder</button>}
-          />
+      {/* Loading & Error States */}
+      {isLoading && (
+        <div className="py-16 text-center">
+          <Spinner className="h-8 w-8 text-teal-600 mx-auto" />
+          <p className="mt-2 text-sm text-slate-500">Loading reminders...</p>
         </div>
       )}
 
-      {reminders.length > 0 && filtered.length === 0 && (
-        <div className="card">
-          <EmptyState icon={<Filter className="h-12 w-12" />} title="No reminders match your filters" description="Try adjusting or clearing your filters." />
+      {error && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-rose-800">
+          <AlertCircle className="h-8 w-8 mx-auto text-rose-600 mb-2" />
+          <p className="text-sm font-semibold">Failed to load reminders</p>
+          <p className="text-xs text-rose-600 mt-1">{(error as any).message}</p>
+          <button onClick={() => refetch()} className="btn-outline mt-4 text-xs">
+            Try again
+          </button>
         </div>
       )}
 
-      {/* List View */}
-      {view === 'list' && filtered.length > 0 && (
-        <div className="space-y-2">
-          {filtered.map((reminder) => (
-            <ReminderCard
-              key={reminder.id}
-              reminder={reminder}
-              onComplete={() => completeMutation.mutate(reminder)}
-              onEdit={() => { setEditingId(reminder.id); setShowForm(true); }}
-              onDelete={() => setDeleteId(reminder.id)}
-              onSnooze={() => setSnoozeId(reminder.id)}
-              completing={completeMutation.isPending}
+      {/* Empty State */}
+      {!isLoading && !error && filteredReminders.length === 0 && (
+        <div className="rounded-3xl bg-white p-12 text-center border border-dashed border-gray-200 shadow-xs">
+          <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-2xl bg-teal-50 text-teal-600 mb-4">
+            <CalendarDays className="h-8 w-8" />
+          </div>
+          <h3 className="text-lg font-bold text-slate-900">No reminders found</h3>
+          <p className="mt-1 text-sm text-slate-500 max-w-sm mx-auto">
+            {reminders.length === 0
+              ? 'Schedule periodic vaccinations, yearly blood profiles, or dental visits.'
+              : 'No reminders match your current search and filter settings.'}
+          </p>
+          <button onClick={handleOpenAdd} className="btn-primary mt-6">
+            <Plus className="h-4 w-4" /> Create Reminder
+          </button>
+        </div>
+      )}
+
+      {/* Reminder Cards List */}
+      {!isLoading && !error && filteredReminders.length > 0 && (
+        <div className="space-y-3">
+          {filteredReminders.map((r) => {
+            const memberName = r.family_member_id ? memberMap.get(r.family_member_id) : 'All Members';
+            const dateStr = r.date || r.due_date || '';
+            const isTodayItem = dateStr.startsWith(todayStr);
+
+            return (
+              <div
+                key={r.id}
+                className={`group relative rounded-2xl bg-white p-5 shadow-sm border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                  r.is_completed
+                    ? 'border-gray-100 bg-slate-50/50 opacity-60'
+                    : isTodayItem
+                    ? 'border-amber-200 ring-1 ring-amber-100/60'
+                    : 'border-gray-100 hover:border-teal-200'
+                }`}
+              >
+                {/* Left side: Checkbox + info */}
+                <div className="flex items-start gap-4 min-w-0">
+                  <button
+                    onClick={() =>
+                      toggleCompleteMutation.mutate({ id: r.id, is_completed: !r.is_completed })
+                    }
+                    disabled={toggleCompleteMutation.isPending}
+                    className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border transition ${
+                      r.is_completed
+                        ? 'bg-emerald-500 border-emerald-500 text-white'
+                        : 'border-slate-300 hover:border-teal-500 bg-white'
+                    }`}
+                    title={r.is_completed ? 'Mark pending' : 'Mark completed'}
+                  >
+                    {r.is_completed && <CheckCircle2 className="h-4 w-4" />}
+                  </button>
+
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3
+                        className={`text-base font-bold leading-tight ${
+                          r.is_completed ? 'line-through text-slate-400' : 'text-slate-900'
+                        }`}
+                      >
+                        {r.title}
+                      </h3>
+                      {r.priority && (
+                        <span
+                          className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                            r.priority === 'High'
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              : r.priority === 'Medium'
+                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {r.priority}
+                        </span>
+                      )}
+                    </div>
+
+                    {r.description && (
+                      <p className="mt-1 text-xs text-slate-500 line-clamp-1">{r.description}</p>
+                    )}
+
+                    <div className="mt-2 flex flex-wrap items-center gap-2.5 text-xs text-slate-400">
+                      <span className="font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md">
+                        {memberName}
+                      </span>
+                      <span>•</span>
+                      <span className="flex items-center gap-1 font-medium text-slate-600">
+                        <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                        {dateStr || 'No date'}
+                      </span>
+                      {(r.due_time || r.time) && (
+                        <>
+                          <span>•</span>
+                          <span className="flex items-center gap-1 text-slate-500">
+                            <Clock className="h-3 w-3 text-slate-400" />
+                            {r.due_time || r.time}
+                          </span>
+                        </>
+                      )}
+                      {r.recurrence && r.recurrence !== 'none' && (
+                        <>
+                          <span>•</span>
+                          <span className="flex items-center gap-1 text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                            <RotateCw className="h-3 w-3" />
+                            {r.recurrence}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right side: Category badge & Actions */}
+                <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-gray-50">
+                  <Badge variant={r.is_completed ? 'neutral' : 'teal'}>
+                    {r.category || 'General'}
+                  </Badge>
+
+                  <div className="flex items-center gap-1">
+                    {!r.is_completed && (
+                      <button
+                        onClick={() => setSnoozeId(r.id)}
+                        className="rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition flex items-center gap-1"
+                        title="Snooze reminder"
+                      >
+                        <Clock className="h-3.5 w-3.5 text-slate-400" />
+                        Snooze
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleOpenEdit(r)}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+                      title="Edit reminder"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setDeletingId(r.id)}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
+                      title="Delete reminder"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add / Edit Modal */}
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        title={editingReminder ? 'Edit Reminder' : 'New Preventive Reminder'}
+        size="lg"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            saveMutation.mutate();
+          }}
+          className="space-y-4"
+        >
+          {formError && (
+            <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs text-rose-700 font-medium">
+              {formError}
+            </div>
+          )}
+
+          <div>
+            <label className="label">Reminder Title *</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Annual Blood Sugar & Lipid Test, Polio Booster..."
+              className="input"
+              value={formTitle}
+              onChange={(e) => setFormTitle(e.target.value)}
             />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Category</label>
+              <select
+                className="input"
+                value={formCategory}
+                onChange={(e) => setFormCategory(e.target.value)}
+              >
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Family Member</label>
+              <select
+                className="input"
+                value={formMemberId}
+                onChange={(e) => setFormMemberId(e.target.value)}
+              >
+                <option value="">All Members / General</option>
+                {familyMembers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.display_name || m.name} ({m.relationship})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="label">Date *</label>
+              <input
+                type="date"
+                required
+                className="input"
+                value={formDate}
+                onChange={(e) => setFormDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="label">Time</label>
+              <input
+                type="time"
+                className="input"
+                value={formTime}
+                onChange={(e) => setFormTime(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="label">Priority</label>
+              <select
+                className="input"
+                value={formPriority}
+                onChange={(e) => setFormPriority(e.target.value)}
+              >
+                {PRIORITIES.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Recurrence</label>
+              <select
+                className="input"
+                value={formRecurrence}
+                onChange={(e) => setFormRecurrence(e.target.value)}
+              >
+                <option value="none">One-time only</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Short Description</label>
+              <input
+                type="text"
+                placeholder="e.g. Fasting 10 hrs before blood draw"
+                className="input"
+                value={formDescription}
+                onChange={(e) => setFormDescription(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Notes / Instructions</label>
+            <textarea
+              rows={2}
+              placeholder="e.g. Dr. Patil suggested this follow up after 3 months..."
+              className="input"
+              value={formNotes}
+              onChange={(e) => setFormNotes(e.target.value)}
+            />
+          </div>
+
+          <div className="mt-6 flex justify-end gap-3 pt-3 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => setShowModal(false)}
+              className="btn-outline"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saveMutation.isPending}
+              className="btn-primary"
+            >
+              {saveMutation.isPending && <Spinner className="h-4 w-4" />}
+              {editingReminder ? 'Save Changes' : 'Create Reminder'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Snooze Modal */}
+      <Modal open={!!snoozeId} onClose={() => setSnoozeId(null)} title="Snooze Reminder" size="sm">
+        <p className="text-sm text-slate-600 mb-4">Postpone this reminder date:</p>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { days: 1, label: '1 Day' },
+            { days: 3, label: '3 Days' },
+            { days: 7, label: '1 Week' },
+            { days: 30, label: '1 Month' },
+          ].map((item) => (
+            <button
+              key={item.days}
+              onClick={() => snoozeId && snoozeMutation.mutate({ id: snoozeId, days: item.days })}
+              disabled={snoozeMutation.isPending}
+              className="rounded-xl border border-gray-200 p-3 text-center text-sm font-bold text-slate-800 hover:bg-teal-50 hover:border-teal-300 transition"
+            >
+              +{item.label}
+            </button>
           ))}
         </div>
-      )}
+      </Modal>
 
-      {/* Calendar View */}
-      {view === 'calendar' && reminders.length > 0 && (
-        <CalendarView
-          reminders={filtered}
-          month={calendarMonth}
-          onPrevMonth={() => setCalendarMonth(addDays(startOfMonth(calendarMonth), -1))}
-          onNextMonth={() => setCalendarMonth(addDays(endOfMonth(calendarMonth), 1))}
-          selectedDay={selectedCalendarDay}
-          onSelectDay={setSelectedCalendarDay}
-        />
-      )}
-
-      {/* Form Modal */}
-      {showForm && (
-        <ReminderForm
-          editing={editingReminder ?? null}
-          familyMembers={familyMembers}
-          onSubmit={(data) => {
-            if (editingId) updateMutation.mutate({ id: editingId, data });
-            else createMutation.mutate(data);
-          }}
-          onClose={() => { setShowForm(false); setEditingId(null); }}
-          loading={createMutation.isPending || updateMutation.isPending}
-          error={createMutation.error?.message || updateMutation.error?.message}
-        />
-      )}
-
-      {/* Snooze Dialog */}
-      {snoozeId && (
-        <Modal open={true} onClose={() => setSnoozeId(null)} title="Snooze reminder" size="sm">
-          <p className="mb-4 text-sm text-navy-600">How long would you like to snooze this reminder?</p>
-          <div className="grid grid-cols-2 gap-3">
-            {[{ d: 1, l: '1 day' }, { d: 3, l: '3 days' }, { d: 7, l: '1 week' }, { d: 30, l: '1 month' }].map((opt) => (
-              <button
-                key={opt.d}
-                onClick={() => snoozeMutation.mutate({ id: snoozeId, days: opt.d })}
-                disabled={snoozeMutation.isPending}
-                className="btn-outline"
-              >
-                {opt.l}
-              </button>
-            ))}
-          </div>
-          {snoozeMutation.isPending && <div className="mt-4 flex justify-center"><Spinner /></div>}
-        </Modal>
-      )}
-
-      {/* Delete Dialog */}
+      {/* Delete Confirmation Dialog */}
       <ConfirmDialog
-        open={!!deleteId}
-        onClose={() => setDeleteId(null)}
-        onConfirm={() => deleteId.mutate(deleteId!)}
-        title="Delete reminder"
-        message="This will permanently remove the reminder. This cannot be undone."
+        open={!!deletingId}
+        onClose={() => setDeletingId(null)}
+        onConfirm={() => deletingId && deleteMutation.mutate(deletingId)}
+        title="Delete Reminder"
+        message="Are you sure you want to delete this reminder? This action cannot be undone."
         confirmLabel="Delete"
         danger
         loading={deleteMutation.isPending}
       />
     </div>
   );
-}
-
-function ReminderCard({ reminder, onComplete, onEdit, onDelete, onSnooze, completing }: {
-  reminder: Reminder & { family_members?: FamilyMember };
-  onComplete: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onSnooze: () => void;
-  completing: boolean;
-}) {
-  const now = new Date();
-  const effectiveDate = reminder.snoozed_until ? parseISO(reminder.snoozed_until) : parseISO(reminder.due_date);
-  const isOverdue = reminder.status === 'pending' && isBefore(effectiveDate, startOfDay(now));
-  const isToday = reminder.status === 'pending' && isAfter(effectiveDate, startOfDay(now)) && isBefore(effectiveDate, endOfDay(now));
-
-  const statusBadge = () => {
-    if (reminder.status === 'completed') return <Badge variant="mint">Completed</Badge>;
-    if (reminder.status === 'snoozed') return <Badge variant="navy">Snoozed</Badge>;
-    if (isOverdue) return <Badge variant="coral">Overdue</Badge>;
-    if (isToday) return <Badge variant="amber">Due today</Badge>;
-    return <Badge variant="teal">Upcoming</Badge>;
-  };
-
-  return (
-    <div className={`card flex items-start gap-4 ${isOverdue ? 'border-coral-200' : isToday ? 'border-amber-200' : ''}`}>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h3 className={`font-semibold text-navy-800 ${reminder.status === 'completed' ? 'line-through text-navy-400' : ''}`}>
-              {reminder.title}
-            </h3>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-navy-400">
-              {reminder.family_members && <span>{reminder.family_members.display_name}</span>}
-              {reminder.family_members && <span>·</span>}
-              <span>{format(effectiveDate, 'd MMM yyyy, h:mm a')}</span>
-              {reminder.recurrence !== 'none' && <Badge variant="neutral">{formatRecurrence(reminder.recurrence)}</Badge>}
-            </div>
-            {reminder.notes && <p className="mt-2 text-sm text-navy-500">{reminder.notes}</p>}
-          </div>
-          <div className="flex flex-shrink-0 items-center gap-1.5">
-            {statusBadge()}
-          </div>
-        </div>
-        <div className="mt-3 flex items-center gap-2">
-          {reminder.status !== 'completed' && (
-            <>
-              <button onClick={onComplete} disabled={completing} className="btn-ghost text-mint-700 hover:bg-mint-50 text-xs">
-                {completing ? <Spinner className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
-                Complete
-              </button>
-              <button onClick={onSnooze} className="btn-ghost text-xs">
-                <Clock className="h-3.5 w-3.5" /> Snooze
-              </button>
-            </>
-          )}
-          <button onClick={onEdit} className="btn-ghost text-xs">
-            <Pencil className="h-3.5 w-3.5" /> Edit
-          </button>
-          <button onClick={onDelete} className="btn-ghost text-coral-600 hover:bg-coral-50 text-xs">
-            <Trash2 className="h-3.5 w-3.5" /> Delete
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CalendarView({ reminders, month, onPrevMonth, onNextMonth, selectedDay, onSelectDay }: {
-  reminders: (Reminder & { family_members?: FamilyMember })[];
-  month: Date;
-  onPrevMonth: () => void;
-  onNextMonth: () => void;
-  selectedDay: Date | null;
-  onSelectDay: (d: Date) => void;
-}) {
-  const monthStart = startOfMonth(month);
-  const monthEnd = endOfMonth(month);
-  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-  const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
-  const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
-
-  const remindersForDay = (day: Date) => reminders.filter((r) => {
-    const d = r.snoozed_until ? parseISO(r.snoozed_until) : parseISO(r.due_date);
-    return isSameDay(d, day);
-  });
-
-  const selectedDayReminders = selectedDay ? remindersForDay(selectedDay) : [];
-
-  return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      <div className="card lg:col-span-2">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="font-semibold text-navy-800">{format(month, 'MMMM yyyy')}</h3>
-          <div className="flex gap-1">
-            <button onClick={onPrevMonth} className="rounded-lg p-2 text-navy-500 hover:bg-navy-50">
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button onClick={onNextMonth} className="rounded-lg p-2 text-navy-500 hover:bg-navy-50">
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-        <div className="grid grid-cols-7 gap-1">
-          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
-            <div key={d} className="py-2 text-center text-xs font-semibold text-navy-400">{d}</div>
-          ))}
-          {days.map((day) => {
-            const dayReminders = remindersForDay(day);
-            const inMonth = isSameMonth(day, month);
-            const isToday = isSameDay(day, new Date());
-            const isSelected = selectedDay && isSameDay(day, selectedDay);
-            const hasOverdue = dayReminders.some((r) => r.status === 'pending' && isBefore(parseISO(r.due_date), startOfDay(new Date())));
-
-            return (
-              <button
-                key={day.toISOString()}
-                onClick={() => onSelectDay(day)}
-                className={`min-h-16 rounded-lg border p-1.5 text-left transition-colors ${
-                  isSelected ? 'border-teal-500 bg-teal-50' :
-                  isToday ? 'border-teal-300 bg-teal-50/30' :
-                  'border-navy-100 hover:bg-navy-50'
-                } ${!inMonth ? 'opacity-40' : ''}`}
-              >
-                <span className={`text-xs ${isToday ? 'font-bold text-teal-700' : 'text-navy-600'}`}>
-                  {format(day, 'd')}
-                </span>
-                {dayReminders.length > 0 && (
-                  <div className="mt-1 flex flex-wrap gap-0.5">
-                    {dayReminders.slice(0, 3).map((r) => (
-                      <span
-                        key={r.id}
-                        className={`h-1.5 w-1.5 rounded-full ${
-                          r.status === 'completed' ? 'bg-mint-400' :
-                          hasOverdue ? 'bg-coral-400' : 'bg-teal-400'
-                        }`}
-                      />
-                    ))}
-                    {dayReminders.length > 3 && <span className="text-[10px] text-navy-400">+{dayReminders.length - 3}</span>}
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="card">
-        <h3 className="mb-3 font-semibold text-navy-800">
-          {selectedDay ? format(selectedDay, 'EEEE, d MMM') : 'Select a day'}
-        </h3>
-        {selectedDay && selectedDayReminders.length === 0 ? (
-          <p className="py-8 text-center text-sm text-navy-400">No reminders on this day</p>
-        ) : selectedDay ? (
-          <div className="space-y-2">
-            {selectedDayReminders.map((r) => (
-              <div key={r.id} className="rounded-lg border border-navy-100 p-3">
-                <p className="text-sm font-medium text-navy-800">{r.title}</p>
-                <p className="text-xs text-navy-400">
-                  {format(parseISO(r.snoozed_until || r.due_date), 'h:mm a')}
-                  {r.family_members && ` · ${r.family_members.display_name}`}
-                </p>
-                <div className="mt-1.5">
-                  {r.status === 'completed' ? <Badge variant="mint">Completed</Badge> : <Badge variant="teal">{r.category}</Badge>}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="py-8 text-center text-sm text-navy-400">Click any day to see reminders</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ReminderForm({ editing, familyMembers, onSubmit, onClose, loading, error }: {
-  editing: Reminder | null;
-  familyMembers: FamilyMember[];
-  onSubmit: (data: FormData) => void;
-  onClose: () => void;
-  loading: boolean;
-  error?: string;
-}) {
-  const dueDate = editing ? parseISO(editing.due_date) : new Date();
-
-  const { register, handleSubmit, control, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
-    defaultValues: editing ? {
-      title: editing.title,
-      family_member_id: editing.family_member_id ?? undefined,
-      category: editing.category,
-      due_date: format(dueDate, 'yyyy-MM-dd'),
-      due_time: format(dueDate, 'HH:mm'),
-      lead_time: editing.lead_time,
-      recurrence: editing.recurrence,
-      notes: editing.notes ?? '',
-    } : {
-      title: '',
-      category: 'General health checkup',
-      due_date: format(new Date(), 'yyyy-MM-dd'),
-      due_time: '09:00',
-      lead_time: 'at_time',
-      recurrence: 'none',
-      notes: '',
-    },
-  });
-
-  return (
-    <Modal open={true} onClose={onClose} title={editing ? 'Edit reminder' : 'New reminder'} size="lg">
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        {error && <div className="rounded-lg bg-coral-50 px-4 py-3 text-sm text-coral-700">{error}</div>}
-
-        <div>
-          <label className="label">Title</label>
-          <input className="input" placeholder="e.g. Annual health checkup" {...register('title')} />
-          {errors.title && <p className="mt-1 text-xs text-coral-600">{errors.title.message}</p>}
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="label">Family member</label>
-            <select className="input" {...register('family_member_id')}>
-              <option value="">Unassigned</option>
-              {familyMembers.map((m) => <option key={m.id} value={m.id}>{m.display_name} ({m.relationship})</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">Category</label>
-            <select className="input" {...register('category')}>
-              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="label">Due date</label>
-            <input type="date" className="input" {...register('due_date')} />
-            {errors.due_date && <p className="mt-1 text-xs text-coral-600">{errors.due_date.message}</p>}
-          </div>
-          <div>
-            <label className="label">Time</label>
-            <input type="time" className="input" {...register('due_time')} />
-            {errors.due_time && <p className="mt-1 text-xs text-coral-600">{errors.due_time.message}</p>}
-          </div>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="label">Recurrence</label>
-            <Controller
-              control={control}
-              name="recurrence"
-              render={({ field }) => (
-                <select className="input" value={field.value} onChange={field.onChange}>
-                  {RECURRENCES.map((r) => <option key={r} value={r}>{formatRecurrence(r)}</option>)}
-                </select>
-              )}
-            />
-          </div>
-          <div>
-            <label className="label">Lead time (notification)</label>
-            <Controller
-              control={control}
-              name="lead_time"
-              render={({ field }) => (
-                <select className="input" value={field.value} onChange={field.onChange}>
-                  {LEAD_TIMES.map((l) => <option key={l} value={l}>{formatLeadTime(l)}</option>)}
-                </select>
-              )}
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="label">Notes (optional)</label>
-          <textarea className="input min-h-20" rows={3} placeholder="Add any notes..." {...register('notes')} />
-        </div>
-
-        <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose} className="btn-outline">Cancel</button>
-          <button type="submit" disabled={loading} className="btn-primary">
-            {loading && <Spinner className="h-4 w-4" />}
-            {editing ? 'Save changes' : 'Create reminder'}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function startOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-function endOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
 }

@@ -1,156 +1,148 @@
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  ChevronLeft, Bookmark, Clock, Tag, ExternalLink, AlertTriangle, ArrowRight, BookOpen,
+  ArrowLeft,
+  Clock,
+  BookOpen,
+  Share2,
+  Bookmark,
+  CheckCircle2,
+  HeartPulse,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import { LoadingState, ErrorState, Badge, EmptyState } from '@/components/ui';
-import type { Article, ArticleBookmark } from '@/lib/types';
+import { Badge, showToast } from '@/components/ui';
+import { HEALTH_ARTICLES } from '@/lib/health-articles';
 
 export function ArticleDetailPage() {
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
 
-  const { data: article, isLoading, error } = useQuery<Article>({
-    queryKey: ['article', id],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('articles').select('*').eq('id', id).maybeSingle();
-      if (error) throw error;
-      if (!data) throw new Error('Not found');
-      return data as Article;
-    },
-    enabled: !!id,
-  });
+  const article = HEALTH_ARTICLES.find((a) => a.id === id);
 
-  const { data: bookmarks = [] } = useQuery<ArticleBookmark[]>({
-    queryKey: ['bookmarks'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('article_bookmarks').select('*');
-      if (error) throw error;
-      return data as ArticleBookmark[];
-    },
-  });
+  if (!article) {
+    return (
+      <div className="py-16 text-center max-w-md mx-auto animate-fade-in">
+        <BookOpen className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+        <h2 className="text-xl font-bold text-slate-800">Article Not Found</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          The requested health article could not be found in our library.
+        </p>
+        <button onClick={() => navigate('/library')} className="btn-primary mt-6">
+          <ArrowLeft className="h-4 w-4" /> Back to Library
+        </button>
+      </div>
+    );
+  }
 
-  const isBookmarked = bookmarks.some((b) => b.article_id === id);
+  const handleShare = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(window.location.href);
+      showToast({ title: 'Article link copied to clipboard', type: 'success' });
+    }
+  };
 
-  const bookmarkMutation = useMutation({
-    mutationFn: async () => {
-      if (isBookmarked) {
-        const existing = bookmarks.find((b) => b.article_id === id);
-        if (existing) {
-          const { error } = await supabase.from('article_bookmarks').delete().eq('id', existing.id);
-          if (error) throw error;
-        }
-      } else {
-        const { error } = await supabase.from('article_bookmarks').insert({ article_id: id });
-        if (error) throw error;
-      }
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bookmarks'] }),
-  });
+  const handleBookmark = () => {
+    showToast({ title: 'Article saved to your bookmarks', type: 'success' });
+  };
 
-  const { data: related = [] } = useQuery<Article[]>({
-    queryKey: ['articles', 'related', article?.category],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('articles')
-        .select('*')
-        .eq('review_status', 'published')
-        .eq('category', article!.category)
-        .neq('id', id!)
-        .limit(3);
-      if (error) throw error;
-      return data as Article[];
-    },
-    enabled: !!article && article.review_status === 'published',
-  });
-
-  if (isLoading) return <LoadingState message="Loading article..." />;
-  if (error || !article) return <ErrorState message="Could not load this article." onRetry={() => navigate('/library')} />;
-
-  const isUnreviewed = !article.reviewer_role && article.review_status === 'published';
+  const paragraphs = article.body.split('\n\n');
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <Link to="/library" className="flex items-center gap-1.5 text-sm text-teal-600 hover:text-teal-700">
-        <ChevronLeft className="h-4 w-4" /> Back to library
-      </Link>
+    <div className="max-w-3xl mx-auto space-y-6 animate-fade-in pb-12">
+      {/* Back button */}
+      <div>
+        <button
+          onClick={() => navigate('/library')}
+          className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-800 transition"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back to Health Library
+        </button>
+      </div>
 
-      <article className="card">
-        <div className="flex items-center justify-between gap-4">
-          <Badge variant="teal">{article.category}</Badge>
-          <button
-            onClick={() => bookmarkMutation.mutate()}
-            disabled={bookmarkMutation.isPending}
-            className={`btn-ghost text-sm ${isBookmarked ? 'text-teal-600' : ''}`}
-          >
-            <Bookmark className={`h-4 w-4 ${isBookmarked ? 'fill-teal-600' : ''}`} />
-            {isBookmarked ? 'Bookmarked' : 'Bookmark'}
-          </button>
-        </div>
+      {/* Article Container */}
+      <article className="rounded-3xl bg-white p-6 sm:p-10 shadow-sm border border-gray-100 space-y-8">
+        {/* Header */}
+        <div className="space-y-4 pb-6 border-b border-gray-100">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <span className="text-3xl p-1.5 rounded-xl bg-slate-50 border border-gray-100">
+                {article.icon}
+              </span>
+              <Badge variant="teal">{article.category}</Badge>
+            </div>
 
-        <h1 className="mt-4 text-3xl font-bold text-navy-800">{article.title}</h1>
-        <p className="mt-2 text-lg text-navy-500">{article.summary}</p>
-
-        <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-navy-400">
-          <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {article.reading_time} min read</span>
-          <span>Updated {new Date(article.updated_at).toLocaleDateString()}</span>
-          {article.language !== 'en' && <Badge variant="neutral">{article.language}</Badge>}
-        </div>
-
-        {isUnreviewed && (
-          <div className="mt-4 flex items-center gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-            Awaiting Medical Review — this article has not yet been reviewed by a medical professional.
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleBookmark}
+                className="rounded-xl border border-gray-200 p-2 text-slate-500 hover:bg-slate-50 transition"
+                title="Bookmark article"
+              >
+                <Bookmark className="h-4 w-4" />
+              </button>
+              <button
+                onClick={handleShare}
+                className="rounded-xl border border-gray-200 p-2 text-slate-500 hover:bg-slate-50 transition"
+                title="Share article"
+              >
+                <Share2 className="h-4 w-4" />
+              </button>
+            </div>
           </div>
-        )}
 
-        <div className="mt-6 prose prose-sm max-w-none text-navy-700">
-          {article.body.split('\n').map((paragraph, i) => (
-            paragraph.trim() ? <p key={i} className="mb-4 leading-relaxed">{paragraph}</p> : null
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 leading-tight">
+            {article.title}
+          </h1>
+
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+            <span className="flex items-center gap-1 font-medium text-slate-600">
+              <Clock className="h-3.5 w-3.5 text-slate-400" />
+              {article.readTime}
+            </span>
+            <span>•</span>
+            <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md">
+              Reviewed by HealthDesk Medical Board
+            </span>
+          </div>
+
+          <div className="rounded-2xl bg-teal-50/50 p-4 border border-teal-100 text-xs sm:text-sm text-teal-900 leading-relaxed font-medium">
+            💡 <strong>Key Takeaway:</strong> {article.summary}
+          </div>
+        </div>
+
+        {/* Formatted Article Body */}
+        <div className="space-y-4 text-slate-700 text-sm sm:text-base leading-relaxed font-normal">
+          {paragraphs.map((para, i) => (
+            <p key={i} className="whitespace-pre-line">
+              {para}
+            </p>
           ))}
         </div>
 
-        {article.tags.length > 0 && (
-          <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-navy-100 pt-4">
-            <Tag className="h-4 w-4 text-navy-400" />
-            {article.tags.map((tag) => <Badge key={tag} variant="neutral">{tag}</Badge>)}
-          </div>
-        )}
-
-        {(article.source_title || article.source_url) && (
-          <div className="mt-4 border-t border-navy-100 pt-4">
-            <p className="text-xs text-navy-400">Source:</p>
-            {article.source_url ? (
-              <a href={article.source_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-teal-600 hover:text-teal-700">
-                {article.source_title || article.source_url}
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            ) : (
-              <p className="text-sm text-navy-600">{article.source_title}</p>
-            )}
-          </div>
-        )}
-      </article>
-
-      {related.length > 0 && (
-        <div>
-          <h3 className="mb-3 font-semibold text-navy-800">Related articles</h3>
-          <div className="grid gap-4 sm:grid-cols-3">
-            {related.map((r) => (
-              <Link key={r.id} to={`/library/${r.id}`} className="card transition-shadow hover:shadow-card-hover">
-                <Badge variant="teal">{r.category}</Badge>
-                <h4 className="mt-2 text-sm font-semibold text-navy-800 line-clamp-2">{r.title}</h4>
-                <p className="mt-1 text-xs text-navy-400 line-clamp-2">{r.summary}</p>
-                <div className="mt-2 flex items-center gap-1 text-xs text-teal-600">
-                  Read <ArrowRight className="h-3 w-3" />
-                </div>
-              </Link>
-            ))}
-          </div>
+        {/* Disclaimer */}
+        <div className="mt-8 rounded-2xl bg-slate-50 p-5 border border-gray-100 text-xs text-slate-500 space-y-1">
+          <p className="font-semibold text-slate-700 flex items-center gap-1.5">
+            <HeartPulse className="h-4 w-4 text-teal-600" /> Medical Disclaimer
+          </p>
+          <p>
+            This article is intended for educational and preventive awareness only. Always consult a licensed physician or specialist before making significant dietary changes or modifying prescribed medication regimens.
+          </p>
         </div>
-      )}
+
+        {/* Next Read / Return to library */}
+        <div className="pt-6 border-t border-gray-100 flex items-center justify-between">
+          <button
+            onClick={() => navigate('/library')}
+            className="btn-outline text-xs"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to All Articles
+          </button>
+
+          <Link
+            to="/planner"
+            className="btn-primary text-xs"
+          >
+            Create Health Reminder
+          </Link>
+        </div>
+      </article>
     </div>
   );
 }

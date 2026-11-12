@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { HeartPulse, Mail, Lock, ArrowRight, AlertCircle } from 'lucide-react';
+import { HeartPulse, Mail, Lock, ArrowRight, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -14,6 +14,31 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
+function PasswordInput({ id, placeholder, registration }: { id: string; placeholder: string; registration: ReturnType<ReturnType<typeof useForm>['register']> }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-navy-300" />
+      <input
+        id={id}
+        type={show ? 'text' : 'password'}
+        className="input pl-10 pr-10"
+        placeholder={placeholder}
+        {...registration}
+      />
+      <button
+        type="button"
+        onClick={() => setShow((s) => !s)}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-navy-300 hover:text-navy-500"
+        tabIndex={-1}
+        aria-label={show ? 'Hide password' : 'Show password'}
+      >
+        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
+  );
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -25,12 +50,15 @@ export function LoginPage() {
 
   const onSubmit = async (data: FormData) => {
     setServerError('');
-    const { error } = await supabase.auth.signInWithPassword({
-      email: data.email,
-      password: data.password,
-    });
+    const email = data.email.trim().toLowerCase();
+    const password = data.password;
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      setServerError('Invalid email or password. Please try again.');
+      if (error.message?.toLowerCase().includes('email not confirmed')) {
+        setServerError('Please confirm your email address first — check your inbox for a confirmation link.');
+      } else {
+        setServerError('Invalid email or password. Please try again.');
+      }
       return;
     }
     const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/dashboard';
@@ -58,10 +86,7 @@ export function LoginPage() {
 
         <div>
           <label className="label">Password</label>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-navy-300" />
-            <input type="password" className="input pl-10" placeholder="Your password" {...register('password')} />
-          </div>
+          <PasswordInput id="login-password" placeholder="Your password" registration={register('password')} />
           {errors.password && <p className="mt-1 text-xs text-coral-600">{errors.password.message}</p>}
         </div>
 
@@ -92,34 +117,49 @@ export function RegisterPage() {
   const navigate = useNavigate();
   const [serverError, setServerError] = useState('');
 
-  const schema = z.object({
+  const registerSchema = z.object({
     display_name: z.string().min(2, 'Enter your name (at least 2 characters)'),
     email: z.string().email('Enter a valid email address'),
     password: z.string().min(8, 'Password must be at least 8 characters'),
     confirmPassword: z.string(),
-    privacy: z.literal(true, { errorMap: () => ({ message: 'Please accept the privacy terms to continue' }) }),
+    privacy: z.literal(true, { error: 'Please accept the privacy terms to continue' }),
   }).refine((d) => d.password === d.confirmPassword, {
     message: 'Passwords do not match',
     path: ['confirmPassword'],
   });
 
-  type FormData = z.infer<typeof schema>;
+  type RegisterFormData = z.infer<typeof registerSchema>;
 
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<RegisterFormData>({
+    resolver: zodResolver(registerSchema),
   });
 
-  const onSubmit = async (data: FormData) => {
+  const onSubmit = async (data: RegisterFormData) => {
     setServerError('');
-    const { error } = await supabase.auth.signUp({
-      email: data.email,
-      password: data.password,
+    const email = data.email.trim().toLowerCase();
+    const password = data.password;
+
+    // 1. Create the account
+    const { error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
       options: { data: { display_name: data.display_name } },
     });
-    if (error) {
+    if (signUpError) {
       setServerError('Could not create your account. This email may already be registered.');
       return;
     }
+
+    // 2. Immediately sign in so user lands on dashboard without email confirmation
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    if (signInError) {
+      // Account created but login blocked (e.g. email confirmation required by Supabase project settings)
+      setServerError(
+        'Account created! Please check your inbox and confirm your email address, then sign in.'
+      );
+      return;
+    }
+
     navigate('/dashboard', { replace: true });
   };
 
@@ -150,19 +190,13 @@ export function RegisterPage() {
 
         <div>
           <label className="label">Password</label>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-navy-300" />
-            <input type="password" className="input pl-10" placeholder="At least 8 characters" {...register('password')} />
-          </div>
+          <PasswordInput id="reg-password" placeholder="At least 8 characters" registration={register('password')} />
           {errors.password && <p className="mt-1 text-xs text-coral-600">{errors.password.message}</p>}
         </div>
 
         <div>
           <label className="label">Confirm password</label>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-navy-300" />
-            <input type="password" className="input pl-10" placeholder="Re-enter your password" {...register('confirmPassword')} />
-          </div>
+          <PasswordInput id="reg-confirm-password" placeholder="Re-enter your password" registration={register('confirmPassword')} />
           {errors.confirmPassword && <p className="mt-1 text-xs text-coral-600">{errors.confirmPassword.message}</p>}
         </div>
 

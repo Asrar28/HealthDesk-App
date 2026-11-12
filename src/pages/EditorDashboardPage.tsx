@@ -54,8 +54,8 @@ export function EditorDashboardPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
 
-  const isReviewer = canReviewArticles(profile?.role);
-  const canPublish = canPublishArticles(profile?.role);
+  const isReviewer = canReviewArticles(profile?.role as any);
+  const canPublish = canPublishArticles(profile?.role as any);
 
   const { data: myArticles = [], isLoading: myLoading } = useQuery<Article[]>({
     queryKey: ['articles', 'my'],
@@ -185,7 +185,7 @@ export function EditorDashboardPage() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-semibold text-navy-800">{a.title}</h3>
-                  <Badge variant={STATUS_VARIANTS[a.review_status]}>{STATUS_LABELS[a.review_status]}</Badge>
+                  <Badge variant={STATUS_VARIANTS[a.review_status || 'draft']}>{STATUS_LABELS[a.review_status || 'draft']}</Badge>
                 </div>
                 <p className="mt-1 text-sm text-navy-500 line-clamp-1">{a.summary}</p>
                 <p className="mt-1 text-xs text-navy-400">{a.category} · {a.reading_time} min · v{a.version}</p>
@@ -226,7 +226,7 @@ export function EditorDashboardPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-navy-800">{a.title}</h3>
-                    <Badge variant="amber">{STATUS_LABELS[a.review_status]}</Badge>
+                    <Badge variant="amber">{STATUS_LABELS[a.review_status || 'draft']}</Badge>
                   </div>
                   <p className="mt-1 text-sm text-navy-500">{a.summary}</p>
                   <p className="mt-1 text-xs text-navy-400">{a.category} · {a.reading_time} min read</p>
@@ -271,15 +271,15 @@ function ArticleForm({ editing, onSubmit, onClose, loading, error }: {
   loading: boolean;
   error?: string;
 }) {
-  const { register, handleSubmit, control, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+  const { register, handleSubmit, control, formState: { errors } } = useForm<any>({
+    resolver: zodResolver(schema) as any,
     defaultValues: editing ? {
       title: editing.title,
       summary: editing.summary,
       body: editing.body,
       category: editing.category,
-      tags: editing.tags.join(', '),
-      language: editing.language,
+      tags: editing.tags?.join(', ') || '',
+      language: editing.language || 'en',
       source_title: editing.source_title ?? '',
       source_url: editing.source_url ?? '',
     } : {
@@ -296,19 +296,19 @@ function ArticleForm({ editing, onSubmit, onClose, loading, error }: {
         <div>
           <label className="label">Title</label>
           <input className="input" {...register('title')} />
-          {errors.title && <p className="mt-1 text-xs text-coral-600">{errors.title.message}</p>}
+          {errors.title && <p className="mt-1 text-xs text-coral-600">{String(errors.title.message || '')}</p>}
         </div>
 
         <div>
           <label className="label">Summary</label>
           <textarea className="input min-h-16" rows={2} {...register('summary')} />
-          {errors.summary && <p className="mt-1 text-xs text-coral-600">{errors.summary.message}</p>}
+          {errors.summary && <p className="mt-1 text-xs text-coral-600">{String(errors.summary.message || '')}</p>}
         </div>
 
         <div>
           <label className="label">Body</label>
           <textarea className="input min-h-48" rows={10} placeholder="Write the article content. Separate paragraphs with blank lines." {...register('body')} />
-          {errors.body && <p className="mt-1 text-xs text-coral-600">{errors.body.message}</p>}
+          {errors.body && <p className="mt-1 text-xs text-coral-600">{String(errors.body.message || '')}</p>}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -344,7 +344,7 @@ function ArticleForm({ editing, onSubmit, onClose, loading, error }: {
           <div>
             <label className="label">Source URL</label>
             <input className="input" placeholder="https://" {...register('source_url')} />
-            {errors.source_url && <p className="mt-1 text-xs text-coral-600">{errors.source_url.message}</p>}
+            {errors.source_url && <p className="mt-1 text-xs text-coral-600">{String(errors.source_url.message || '')}</p>}
           </div>
         </div>
 

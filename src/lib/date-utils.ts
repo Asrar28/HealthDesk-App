@@ -46,6 +46,8 @@ export function formatLeadTime(leadTime: LeadTime): string {
       return '1 day before';
     case '1_week':
       return '1 week before';
+    default:
+      return 'At time of event';
   }
 }
 
@@ -61,5 +63,7 @@ export function formatRecurrence(recurrence: RecurrenceType): string {
       return 'Monthly';
     case 'yearly':
       return 'Yearly';
+    default:
+      return 'One-time';
   }
 }

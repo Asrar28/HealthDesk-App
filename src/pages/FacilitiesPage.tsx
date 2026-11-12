@@ -1,204 +1,213 @@
-import { useState, useMemo, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import L from 'leaflet';
-import { Building2, Search, List, Map as MapIcon, Phone, Navigation, X, Filter, Plus, BadgeCheck, Clock, ShieldQuestion } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/lib/auth';
-import { canManageFacilities } from '@/lib/permissions';
-import { LoadingState, EmptyState, ErrorState, Badge } from '@/components/ui';
-import type { Facility, FacilityCategory } from '@/lib/types';
-
-const CATEGORIES: FacilityCategory[] = [
-  'Government Hospital', 'PHC', 'CHC', 'Private Hospital', 'Clinic',
-  'Diagnostic Lab', 'Pharmacy', 'Blood Bank', 'Specialist', 'Emergency',
-];
-
-delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
-
-const BHATKAL_CENTER: [number, number] = [13.8715, 74.6184];
+import {
+  Building2,
+  Search,
+  Phone,
+  MapPin,
+  Clock,
+  ShieldAlert,
+  ArrowRight,
+  Filter,
+  CheckCircle2,
+  Stethoscope,
+  Pill,
+  TestTube,
+} from 'lucide-react';
+import { Badge } from '@/components/ui';
+import { BHATKAL_FACILITIES } from '@/lib/bhatkal-facilities';
+import type { Facility } from '@/lib/types';
 
 export function FacilitiesPage() {
-  const { profile } = useAuth();
-  const [view, setView] = useState<'list' | 'map'>('list');
+  const [filterType, setFilterType] = useState<string>('all');
   const [search, setSearch] = useState('');
-  const [filterCategory, setFilterCategory] = useState('all');
-  const [filterService, setFilterService] = useState('');
-  const [filterPin, setFilterPin] = useState('');
 
-  const { data: facilities = [], isLoading, error, refetch } = useQuery<Facility[]>({
-    queryKey: ['facilities'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('facilities').select('*').order('name');
-      if (error) throw error;
-      return data as Facility[];
-    },
-  });
-
-  const allServices = useMemo(() => {
-    const svcs = new Set<string>();
-    facilities.forEach((f) => f.services.forEach((s) => svcs.add(s)));
-    return Array.from(svcs).sort();
-  }, [facilities]);
-
-  const filtered = useMemo(() => {
-    return facilities.filter((f) => {
-      if (search) {
-        const q = search.toLowerCase();
-        if (!f.name.toLowerCase().includes(q) && !(f.locality ?? '').toLowerCase().includes(q)) return false;
+  const filteredFacilities = useMemo(() => {
+    return BHATKAL_FACILITIES.filter((f) => {
+      if (filterType !== 'all' && f.type.toLowerCase() !== filterType.toLowerCase()) {
+        return false;
       }
-      if (filterCategory !== 'all' && f.category !== filterCategory) return false;
-      if (filterService && !f.services.includes(filterService)) return false;
-      if (filterPin && f.pincode !== filterPin) return false;
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        const n = f.name.toLowerCase();
+        const a = f.area.toLowerCase();
+        const addr = f.address.toLowerCase();
+        const services = f.services.join(' ').toLowerCase();
+        if (!n.includes(q) && !a.includes(q) && !addr.includes(q) && !services.includes(q)) {
+          return false;
+        }
+      }
       return true;
     });
-  }, [facilities, search, filterCategory, filterService, filterPin]);
+  }, [filterType, search]);
 
-  if (isLoading) return <LoadingState message="Loading facilities..." />;
-  if (error) return <ErrorState message="Could not load facilities." onRetry={() => refetch()} />;
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-navy-800">Facility Finder</h1>
-          <p className="text-sm text-navy-500">Healthcare facilities in Bhatkal, Karnataka</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {canManageFacilities(profile?.role) && (
-            <Link to="/facilities/admin" className="btn-outline">
-              <Plus className="h-4 w-4" /> Manage
-            </Link>
-          )}
-          <div className="flex rounded-lg border border-navy-200 bg-white p-1">
-            <button onClick={() => setView('list')} className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${view === 'list' ? 'bg-teal-50 text-teal-700' : 'text-navy-500'}`}>
-              <List className="h-4 w-4" /> List
-            </button>
-            <button onClick={() => setView('map')} className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${view === 'map' ? 'bg-teal-50 text-teal-700' : 'text-navy-500'}`}>
-              <MapIcon className="h-4 w-4" /> Map
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="card">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-navy-300" />
-            <input className="input pl-10" placeholder="Search by name or locality..." value={search} onChange={(e) => setSearch(e.target.value)} />
-          </div>
-          <select className="input" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
-            <option value="all">All categories</option>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <select className="input" value={filterService} onChange={(e) => setFilterService(e.target.value)}>
-            <option value="">All services</option>
-            {allServices.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <input className="input" placeholder="PIN code" value={filterPin} onChange={(e) => setFilterPin(e.target.value)} maxLength={6} />
-        </div>
-        {(search || filterCategory !== 'all' || filterService || filterPin) && (
-          <button onClick={() => { setSearch(''); setFilterCategory('all'); setFilterService(''); setFilterPin(''); }} className="mt-3 flex items-center gap-1 text-sm text-teal-600 hover:text-teal-700">
-            <X className="h-3.5 w-3.5" /> Clear filters
-          </button>
-        )}
-      </div>
-
-      {facilities.length === 0 ? (
-        <div className="card">
-          <EmptyState
-            icon={<Building2 className="h-12 w-12" />}
-            title="No facilities yet"
-            description={canManageFacilities(profile?.role) ? "Add the first healthcare facility to help families find local care." : "Facilities will appear here once an admin adds them."}
-            action={canManageFacilities(profile?.role) ? <Link to="/facilities/admin" className="btn-primary"><Plus className="h-4 w-4" /> Add facility</Link> : undefined}
-          />
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="card">
-          <EmptyState icon={<Filter className="h-12 w-12" />} title="No facilities match your filters" description="Try adjusting or clearing your filters." />
-        </div>
-      ) : view === 'list' ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((f) => <FacilityCard key={f.id} facility={f} />)}
-        </div>
-      ) : (
-        <div className="card overflow-hidden p-0">
-          <div className="h-[600px] w-full">
-            <MapContainer center={BHATKAL_CENTER} zoom={13} className="h-full w-full">
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              />
-              {filtered.filter((f) => f.lat && f.lng).map((f) => (
-                <Marker key={f.id} position={[f.lat!, f.lng!]}>
-                  <Popup>
-                    <div className="min-w-48">
-                      <p className="font-semibold">{f.name}</p>
-                      <p className="text-xs text-gray-500">{f.category}</p>
-                      {f.phone && <p className="text-xs mt-1">{f.phone}</p>}
-                      <a href={`/facilities/${f.id}`} className="text-xs text-teal-600 mt-1 inline-block">View details</a>
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
-            </MapContainer>
-          </div>
-          <div className="flex items-center justify-between border-t border-navy-100 px-4 py-3">
-            <p className="text-xs text-navy-400">Showing {filtered.length} facilities · Map data &copy; OpenStreetMap contributors</p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function FacilityCard({ facility }: { facility: Facility }) {
-  const verificationBadge = () => {
-    if (facility.verification_status === 'verified') return <Badge variant="mint"><BadgeCheck className="h-3 w-3" /> Verified</Badge>;
-    if (facility.verification_status === 'unverified') return <Badge variant="coral"><ShieldQuestion className="h-3 w-3" /> Unverified</Badge>;
-    return <Badge variant="amber"><Clock className="h-3 w-3" /> Pending</Badge>;
+  const typeIcons: Record<string, typeof Building2> = {
+    Hospital: Building2,
+    Clinic: Stethoscope,
+    Pharmacy: Pill,
+    Lab: TestTube,
   };
 
   return (
-    <Link to={`/facilities/${facility.id}`} className="card transition-shadow hover:shadow-card-hover flex flex-col">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600">
-            <Building2 className="h-5 w-5" />
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+              Healthcare Facilities — Bhatkal
+            </h1>
+            <span className="rounded-full bg-teal-100 text-teal-800 text-xs font-bold px-2.5 py-0.5">
+              Karnataka 581320
+            </span>
           </div>
-          <div className="min-w-0">
-            <h3 className="font-semibold text-navy-800">{facility.name}</h3>
-            <p className="text-xs text-navy-400">{facility.category}</p>
-          </div>
+          <p className="text-sm text-slate-500 mt-1">
+            Verified local hospitals, polyclinics, diagnostic blood labs, and 24/7 pharmacies across Bhatkal.
+          </p>
         </div>
-        {verificationBadge()}
       </div>
-      <p className="mt-3 text-sm text-navy-500 line-clamp-2">{facility.address}</p>
-      {facility.services.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {facility.services.slice(0, 3).map((s) => <Badge key={s} variant="neutral">{s}</Badge>)}
-          {facility.services.length > 3 && <Badge variant="neutral">+{facility.services.length - 3}</Badge>}
+
+      {/* Filters & Search */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {(['all', 'Hospital', 'Clinic', 'Pharmacy', 'Lab'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setFilterType(t)}
+              className={`rounded-xl px-4 py-2 text-xs font-bold transition-all ${
+                filterType === t
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'bg-white text-slate-600 border border-gray-200 hover:bg-slate-50'
+              }`}
+            >
+              {t === 'all' ? 'All Facilities' : `${t}s`}
+            </button>
+          ))}
         </div>
-      )}
-      <div className="mt-auto flex items-center gap-2 border-t border-navy-100 pt-3">
-        {facility.phone && (
-          <a href={`tel:${facility.phone}`} onClick={(e) => e.stopPropagation()} className="btn-ghost text-xs text-teal-600">
-            <Phone className="h-3.5 w-3.5" /> Call
-          </a>
-        )}
-        {facility.lat && facility.lng && (
-          <a href={`https://www.openstreetmap.org/directions?from=&to=${facility.lat}%2C${facility.lng}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="btn-ghost text-xs">
-            <Navigation className="h-3.5 w-3.5" /> Directions
-          </a>
-        )}
+
+        <div className="rounded-2xl bg-white p-3.5 shadow-sm border border-gray-100 flex items-center gap-3">
+          <Search className="h-5 w-5 text-slate-400 shrink-0" />
+          <input
+            type="text"
+            placeholder="Search by facility name, locality (e.g. Shirali, Bunder, College Rd), or service..."
+            className="w-full bg-transparent text-xs sm:text-sm text-slate-900 outline-none placeholder:text-slate-400"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="text-xs font-semibold text-slate-400 hover:text-slate-600">
+              Clear
+            </button>
+          )}
+        </div>
       </div>
-    </Link>
+
+      {/* Facilities Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        {filteredFacilities.map((f) => {
+          const IconComp = typeIcons[f.type] || Building2;
+          return (
+            <div
+              key={f.id}
+              className="group rounded-2xl bg-white p-6 shadow-sm border border-gray-100 hover:shadow-md hover:border-teal-200 transition-all flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3.5">
+                    <div
+                      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+                        f.type === 'Hospital'
+                          ? 'bg-teal-50 text-teal-700'
+                          : f.type === 'Pharmacy'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : f.type === 'Lab'
+                          ? 'bg-indigo-50 text-indigo-700'
+                          : 'bg-sky-50 text-sky-700'
+                      }`}
+                    >
+                      <IconComp className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900 group-hover:text-teal-700 transition">
+                        {f.name}
+                      </h3>
+                      <div className="mt-1 flex items-center gap-2">
+                        <Badge
+                          variant={
+                            f.type === 'Hospital'
+                              ? 'teal'
+                              : f.type === 'Pharmacy'
+                              ? 'mint'
+                              : f.type === 'Lab'
+                              ? 'navy'
+                              : 'blue'
+                          }
+                        >
+                          {f.type}
+                        </Badge>
+                        {f.emergency && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                            <ShieldAlert className="h-3 w-3 text-rose-500" /> 24/7 Emergency
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Area & Address */}
+                <div className="mt-4 space-y-2 text-xs text-slate-600">
+                  <div className="flex items-start gap-2">
+                    <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                    <span className="line-clamp-1 font-medium">{f.address}</span>
+                  </div>
+                  {f.timing && (
+                    <div className="flex items-center gap-2 text-slate-500">
+                      <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      <span>{f.timing}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Service pills */}
+                <div className="mt-4 flex flex-wrap gap-1.5">
+                  {f.services.slice(0, 4).map((s) => (
+                    <span
+                      key={s}
+                      className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700"
+                    >
+                      {s}
+                    </span>
+                  ))}
+                  {f.services.length > 4 && (
+                    <span className="rounded-lg bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-400">
+                      +{f.services.length - 4} more
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Bottom Actions */}
+              <div className="mt-6 pt-4 border-t border-gray-50 flex items-center justify-between gap-3">
+                <a
+                  href={`tel:${f.phone.replace(/[^0-9+]/g, '')}`}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-teal-700"
+                >
+                  <Phone className="h-3.5 w-3.5 text-teal-600" />
+                  {f.phone}
+                </a>
+
+                <Link
+                  to={`/facilities/${f.id}`}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-teal-600 hover:text-teal-800"
+                >
+                  View Details <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

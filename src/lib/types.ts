@@ -3,17 +3,31 @@ export type UserRole = 'member' | 'editor' | 'reviewer' | 'admin';
 export interface Profile {
   id: string;
   display_name: string;
-  role: UserRole;
+  role: string;
+  created_at: string;
+}
+
+export interface UserSettings {
+  id: string;
+  notify_reminders: boolean;
+  notify_overdue: boolean;
+  notify_articles: boolean;
+  push_enabled: boolean;
+  privacy_consent: boolean;
   created_at: string;
 }
 
 export interface FamilyMember {
   id: string;
-  owner_id: string;
+  user_id: string;
   display_name: string;
+  name: string;
   relationship: string;
-  birth_year: number | null;
+  age: number | null;
+  gender: string | null;
+  date_of_birth: string | null;
   avatar_url: string | null;
+  notes: string | null;
   created_at: string;
 }
 
@@ -35,41 +49,76 @@ export type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export interface Reminder {
   id: string;
-  owner_id: string;
-  family_member_id: string | null;
+  user_id: string;
   title: string;
-  category: ReminderCategory;
-  status: ReminderStatus;
-  due_date: string;
-  lead_time: LeadTime;
-  recurrence: RecurrenceType;
+  description: string | null;
+  due_date: string | null;
+  due_time: string | null;
+  date: string | null;
+  time?: string | null;
+  category: string;
+  type: string | null;
+  status: string;
+  priority: string | null;
+  recurrence: string;
+  family_member_id: string | null;
   notes: string | null;
-  snoozed_until: string | null;
-  completed_at: string | null;
-  next_due_date: string | null;
+  is_completed: boolean;
   created_at: string;
-  updated_at: string;
   family_members?: FamilyMember | null;
 }
 
-export interface UserSettings {
+export interface Medicine {
   id: string;
-  notify_reminders: boolean;
-  notify_overdue: boolean;
-  notify_articles: boolean;
-  push_enabled: boolean;
-  privacy_consent: boolean;
+  user_id: string;
+  name: string;
+  dosage: string | null;
+  frequency: string | null;
+  time: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  family_member_id: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  family_members?: FamilyMember | null;
+}
+
+export interface Appointment {
+  id: string;
+  user_id: string;
+  title: string;
+  doctor_name: string | null;
+  hospital: string | null;
+  date: string | null;
+  due_date: string | null;
+  time: string | null;
+  family_member_id: string | null;
+  status: string;
+  notes: string | null;
+  created_at: string;
+  family_members?: FamilyMember | null;
+}
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  title: string;
+  message: string | null;
+  is_read: boolean;
   created_at: string;
 }
 
 export type FacilityCategory =
+  | 'Hospital'
+  | 'Clinic'
+  | 'Pharmacy'
+  | 'Lab'
   | 'Government Hospital'
   | 'PHC'
   | 'CHC'
   | 'Private Hospital'
-  | 'Clinic'
   | 'Diagnostic Lab'
-  | 'Pharmacy'
   | 'Blood Bank'
   | 'Specialist'
   | 'Emergency';
@@ -79,25 +128,26 @@ export type VerificationStatus = 'pending' | 'verified' | 'unverified';
 export interface Facility {
   id: string;
   name: string;
-  category: FacilityCategory;
+  type: 'Hospital' | 'Clinic' | 'Pharmacy' | 'Lab';
+  category?: FacilityCategory;
+  area: string;
   address: string;
-  locality: string | null;
-  city: string | null;
-  district: string | null;
-  state: string | null;
-  pincode: string | null;
-  phone: string | null;
-  website: string | null;
-  lat: number | null;
-  lng: number | null;
+  phone: string;
+  emergency: boolean;
   services: string[];
-  opening_hours: Record<string, string> | null;
-  emergency_info: string | null;
-  verification_status: VerificationStatus;
-  source: string | null;
-  last_verified: string | null;
-  created_at: string;
-  updated_at: string;
+  timing?: string;
+  description?: string;
+  locality?: string | null;
+  city?: string | null;
+  district?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  website?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  emergency_info?: string | null;
+  verification_status?: VerificationStatus;
+  source?: string | null;
 }
 
 export type ArticleCategory =
@@ -129,18 +179,18 @@ export interface Article {
   summary: string;
   body: string;
   category: ArticleCategory;
-  tags: string[];
-  language: string;
-  source_title: string | null;
-  source_url: string | null;
-  review_status: ReviewStatus;
-  reviewer_role: string | null;
-  review_date: string | null;
-  version: number;
-  reading_time: number;
-  author_id: string;
-  created_at: string;
-  updated_at: string;
+  tags?: string[];
+  language?: string;
+  source_title?: string | null;
+  source_url?: string | null;
+  review_status?: ReviewStatus;
+  reviewer_role?: string | null;
+  review_date?: string | null;
+  version?: number;
+  reading_time?: number;
+  author_id?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface ArticleBookmark {
@@ -150,13 +200,13 @@ export interface ArticleBookmark {
   created_at: string;
 }
 
-export interface Notification {
+export interface HealthArticle {
   id: string;
-  user_id: string;
-  type: string;
   title: string;
-  message: string | null;
-  link: string | null;
-  read: boolean;
-  created_at: string;
+  category: string;
+  icon: string;
+  readTime: string;
+  summary: string;
+  body: string;
+  tags?: string[];
 }
