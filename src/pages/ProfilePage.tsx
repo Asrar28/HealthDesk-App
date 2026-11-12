@@ -1,107 +1,90 @@
-import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { User as UserIcon, Mail, LogOut, Shield } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { useNavigate } from 'react-router-dom';
-import { Spinner, Badge } from '@/components/ui';
-import type { UserRole } from '@/lib/types';
+import { Badge } from '@/components/ui/Badge';
+import { Spinner } from '@/components/ui/Spinner';
+import { Mail, Shield, LogOut } from 'lucide-react';
 
-const schema = z.object({
-  display_name: z.string().min(2, 'Enter a name (at least 2 characters)'),
-});
-
-type FormData = z.infer<typeof schema>;
+type FormData = { display_name: string };
+type UserRole = 'member' | 'admin' | 'doctor';
 
 const roleLabels: Record<UserRole, string> = {
   member: 'Member',
-  editor: 'Editor',
-  reviewer: 'Reviewer',
   admin: 'Admin',
+  doctor: 'Doctor',
 };
 
 export function ProfilePage() {
-  const { user, profile, signOut, refreshProfile } = useAuth();
-  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const queryClient = useQueryClient();
   const [saved, setSaved] = useState(false);
+  const [localProfile, setLocalProfile] = useState<{ full_name: string | null; role: string | null } | null>(null);
 
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
-    resolver: zodResolver(schema),
-    defaultValues: { display_name: profile?.full_name ?? '' },
+  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
+    defaultValues: { display_name: '' },
   });
 
- const updateMutation = useMutation({
-  mutationFn: async (data: FormData) => {
-    const { data: existing } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', user!.id)
-      .maybeSingle();
+  // Fetch profile DIRECTLY, don't wait for useAuth
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('profiles').select('full_name, role').eq('id', user.id).maybeSingle().then(({ data }) => {
+      if (data) {
+        setLocalProfile(data);
+        reset({ display_name: data.full_name ?? '' });
+      }
+    });
+  }, [user, reset]);
 
-    if (existing) {
+  const profile = localProfile;
+  const displayName = profile?.full_name || 'User';
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: FormData) => {
       const { error } = await supabase
         .from('profiles')
-        .update({ full_name: data.display_name, email: user!.email })
-        .eq('id', user!.id);
+        .upsert({ id: user!.id, full_name: data.display_name, email: user!.email }, { onConflict: 'id' });
       if (error) throw error;
-    } else {
-      const { error } = await supabase
-        .from('profiles')
-        .insert({ id: user!.id, full_name: data.display_name, email: user!.email });
-      if (error) throw error;
-    }
-  },
-    onSuccess: () => {
-      refreshProfile();
-      queryClient.invalidateQueries({ queryKey: ['profile'] });
+    },
+    onSuccess: async () => {
       setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      const { data } = await supabase.from('profiles').select('full_name, role').eq('id', user!.id).maybeSingle();
+      if (data) {
+        setLocalProfile(data);
+        reset({ display_name: data.full_name ?? '' });
+      }
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
     },
   });
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate('/');
-  };
+  const handleSignOut = async () => { await signOut(); };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-navy-800">Profile</h1>
-        <p className="text-sm text-navy-500">Your account information</p>
-      </div>
-
-      <div className="card">
-        <div className="flex items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-teal-500 text-white">
-            <span className="text-2xl font-bold">{profile?.full_name?.charAt(0).toUpperCase() ?? user?.email?.charAt(0).toUpperCase()}</span>
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-navy-800">{profile?.full_name || 'User'}</h2>
-            <p className="text-sm text-navy-500">{user?.email}</p>
-            <div className="mt-1.5 flex items-center gap-2">
-              <Badge variant="teal">
-                <Shield className="h-3 w-3" />
-                {roleLabels[(profile?.role as UserRole) ?? 'member'] || 'Member'}
-              </Badge>
-            </div>
+    <div className="space-y-6">
+      <div className="card flex items-center gap-4">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-teal-500 text-white">
+          <span className="text-2xl font-bold">{displayName.charAt(0).toUpperCase()}</span>
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-navy-800">{displayName}</h2>
+          <p className="text-sm text-navy-500">{user?.email}</p>
+          <div className="mt-1.5 flex items-center gap-2">
+            <Badge variant="teal">
+              <Shield className="h-3 w-3" />
+              {roleLabels[(profile?.role as UserRole) ?? 'member'] || 'Member'}
+            </Badge>
           </div>
         </div>
       </div>
 
       <form onSubmit={handleSubmit((data) => updateMutation.mutate(data))} className="card space-y-4">
         <h3 className="font-semibold text-navy-800">Edit profile</h3>
-
         <div>
           <label className="label">Display name</label>
           <input className="input" {...register('display_name')} />
           {errors.display_name && <p className="mt-1 text-xs text-coral-600">{errors.display_name.message}</p>}
         </div>
-
         <div>
           <label className="label">Email</label>
           <div className="relative">
@@ -112,10 +95,10 @@ export function ProfilePage() {
         </div>
 
         {updateMutation.error && (
-          <div className="rounded-lg bg-coral-50 px-4 py-3 text-sm text-coral-700">Could not save changes. Please try again.</div>
+          <div className="rounded-lg bg-coral-50 px-4 py-3 text-sm text-coral-700">{updateMutation.error.message}</div>
         )}
         {saved && (
-          <div className="rounded-lg bg-mint-100 px-4 py-3 text-sm text-mint-700">Profile updated successfully.</div>
+          <div className="rounded-lg bg-mint-100 px-4 py-3 text-sm text-mint-700">Profile updated successfully</div>
         )}
 
         <div className="flex justify-end">
