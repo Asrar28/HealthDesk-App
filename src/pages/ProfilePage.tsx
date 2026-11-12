@@ -36,20 +36,27 @@ export function ProfilePage() {
     defaultValues: { display_name: '' },
   });
 
-  // Fetch profile DIRECTLY from Supabase - don't rely on useAuth
-  useEffect(() => {
-    if (!user?.id) return;
-    supabase.from('profiles').select('full_name, role').eq('id', user.id).single().then(({ data }) => {
-      if (data) {
-        setProfileName(data.full_name || '');
-        setProfileRole((data.role as UserRole) || 'member');
-        reset({ display_name: data.full_name || '' });
-      }
-    });
-  }, [user?.id, reset]);
+ // Fetch profile - with fallback to useAuth + auth metadata
+useEffect(() => {
+  // 1. Instant fallback - don't wait for Supabase
+  const fallbackName = profile?.full_name || (user as any)?.user_metadata?.full_name || (user as any)?.user_metadata?.display_name || '';
+  if (fallbackName) {
+    setProfileName(fallbackName);
+    reset({ display_name: fallbackName });
+  }
 
-  const displayName = profileName || 'User';
+  if (!user?.id) return;
+  supabase.from('profiles').select('full_name, role').eq('id', user.id).single().then(({ data }) => {
+    if (data) {
+      const name = data.full_name || fallbackName;
+      setProfileName(name || '');
+      setProfileRole((data.role as UserRole) || 'member');
+      reset({ display_name: name || '' });
+    }
+  });
+}, [user?.id, profile?.full_name, reset]);
 
+const displayName = profileName || profile?.full_name || (user as any)?.user_metadata?.full_name || 'User';
   const updateMutation = useMutation({
     mutationFn: async (data: FormData) => {
   const cleanName = data.display_name.trim();
